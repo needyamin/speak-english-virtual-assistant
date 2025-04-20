@@ -5,3 +5,4 @@ pyttsx3
 pillow
 pywin32
 openai
+pystray

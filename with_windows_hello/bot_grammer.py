@@ -11,11 +11,9 @@ import openai
 import time
 import os
 from PIL import Image, ImageTk
-import win32security
-import win32con
-import win32api
-import win32cred
 import traceback
+import pystray
+from pystray import MenuItem as item
 import ctypes
 from ctypes import wintypes
 
@@ -37,6 +35,85 @@ else:
     openai.api_base = ''
     cur.execute('INSERT INTO config (id, api_key, api_base) VALUES (1, ?, ?)', ('', ''))
     conn.commit()
+
+# Add a password column to the config table if it doesn't exist
+cur.execute('''PRAGMA table_info(config)''')
+columns = [col[1] for col in cur.fetchall()]
+if 'password' not in columns:
+    cur.execute('ALTER TABLE config ADD COLUMN password TEXT')
+    cur.execute('UPDATE config SET password=? WHERE id=1', ('admin',))  # Default password
+    conn.commit()
+
+# Password verification
+def verify_password():
+    def login():
+        entered_password = password_entry.get().strip()
+        cur.execute('SELECT password FROM config WHERE id=1')
+        stored_password = cur.fetchone()[0]
+        if entered_password == stored_password:
+            log("Login successful.")
+            login_win.destroy()
+            open_settings_interface()
+        else:
+            log("Incorrect password. Please try again.", level='ERROR')
+
+    login_win = Toplevel(root)
+    login_win.title("Login")
+    Label(login_win, text="Enter Password:").grid(row=0, column=0, padx=5, pady=5)
+    password_entry = Entry(login_win, show="*", width=30)
+    password_entry.grid(row=0, column=1, padx=5, pady=5)
+    Button(login_win, text="Login", command=login).grid(row=1, column=0, columnspan=2, pady=10)
+
+# Open settings interface with password reset functionality
+def open_settings_interface():
+    def save_settings():
+        key = api_key_entry.get().strip()
+        base = api_base_entry.get().strip()
+        new_password = new_password_entry.get().strip()
+        confirm_password = confirm_password_entry.get().strip()
+
+        if new_password and new_password != confirm_password:
+            log("Passwords do not match. Please try again.", level='ERROR')
+            return
+
+        with sqlite3.connect(DB_PATH) as thread_conn:
+            thread_cur = thread_conn.cursor()
+            thread_cur.execute('UPDATE config SET api_key=?, api_base=? WHERE id=1', (key, base))
+            if new_password:
+                thread_cur.execute('UPDATE config SET password=? WHERE id=1', (new_password,))
+            thread_conn.commit()
+
+        openai.api_key = key
+        openai.api_base = base
+        log("Settings saved.")
+        settings_win.destroy()
+
+    settings_win = Toplevel(root)
+    settings_win.title("Settings")
+    Label(settings_win, text="OpenAI API Key:").grid(row=0, column=0, sticky='w', padx=5, pady=5)
+    api_key_entry = Entry(settings_win, width=50)
+    api_key_entry.grid(row=0, column=1, padx=5, pady=5)
+    api_key_entry.insert(0, openai.api_key)
+
+    Label(settings_win, text="API Base URL:").grid(row=1, column=0, sticky='w', padx=5, pady=5)
+    api_base_entry = Entry(settings_win, width=50)
+    api_base_entry.grid(row=1, column=1, padx=5, pady=5)
+    api_base_entry.insert(0, openai.api_base)
+
+    Label(settings_win, text="New Password:").grid(row=2, column=0, sticky='w', padx=5, pady=5)
+    new_password_entry = Entry(settings_win, show="*", width=50)
+    new_password_entry.grid(row=2, column=1, padx=5, pady=5)
+
+    Label(settings_win, text="Confirm Password:").grid(row=3, column=0, sticky='w', padx=5, pady=5)
+    confirm_password_entry = Entry(settings_win, show="*", width=50)
+    confirm_password_entry.grid(row=3, column=1, padx=5, pady=5)
+
+    Button(settings_win, text="Save", command=save_settings).grid(row=4, column=0, columnspan=2, pady=10)
+
+# Update open_settings to use the new password system
+def open_settings():
+    verify_password()
+
 # ─────────────────────────────────────────────────
 
 recognizer = sr.Recognizer()
@@ -48,13 +125,16 @@ stream = None
 # ─── GUI SETUP ─────────────────────────────────────────
 root = tk.Tk()
 root.title("🎧 Speech → 🧠 AI Grammar Fix → 🗣️ Voice")
-root.geometry("700x600")
+root.geometry("700x650")
 ico_path = os.path.join(os.path.dirname(__file__), 'needyamin.ico')
 if os.path.exists(ico_path):
     try:
         root.iconbitmap(ico_path)
     except Exception:
         pass
+
+# Initialize logo_photo globally
+logo_photo = None
 
 # Display logo image (converted from .ico if needed)
 logo_img_path = os.path.join(os.path.dirname(__file__), 'logo_display.png')
@@ -69,12 +149,12 @@ if logo_img_path and os.path.exists(logo_img_path):
     try:
         logo_img = Image.open(logo_img_path)
         logo_img = logo_img.resize((48, 48), Image.ANTIALIAS)
-        logo_photo = ImageTk.PhotoImage(logo_img)
+        logo_photo = ImageTk.PhotoImage(logo_img)  # Assign to global variable
         logo_label = tk.Label(root, image=logo_photo)
         logo_label.image = logo_photo
         logo_label.grid(row=0, column=0, padx=10, pady=10, sticky='nw')
     except Exception:
-        pass
+        logo_photo = None  # Ensure logo_photo is None if an error occurs
 
 # Load icon image for logging
 icon_image = None
@@ -86,7 +166,7 @@ if os.path.exists(ico_path):
     except Exception:
         icon_image = None
 
-# Logging helper
+# Update the log function to ensure the image is displayed correctly
 def log(message, level='INFO', icon=False):
     output.configure(state=tk.NORMAL)
     if message == 'Clear Logs':
@@ -95,9 +175,9 @@ def log(message, level='INFO', icon=False):
         return
     timestamp = time.strftime('%d %B %Y: %I:%M %p').lstrip('0')
     output.insert(tk.END, '   ' + timestamp + '\n', 'timestamp')
-    if icon and output.icon_image:
-        output.image_create(tk.END, image=output.icon_image)
-        output.insert(tk.END, '  ', level)
+    if icon and logo_photo:  # Ensure logo_photo is available
+        output.image_create(tk.END, image=logo_photo)  # Insert the image
+        output.insert(tk.END, '  ', level)  # Add spacing after the image
     output.insert(tk.END, message + '\n', level)
     output.configure(state=tk.DISABLED)
     output.see(tk.END)
@@ -186,9 +266,11 @@ def submit_manual_text():
 
 # Grammar correction & TTS
 def show_correction(text):
-    log(f"You said: {text}")
+    log("You said:", icon=True)  # Display the image before "You said:"
+    log(text)  # Display the user's input text
     corrected = correct_grammar_gpt(text)
-    log(f"Corrected: {corrected}", icon=True)
+    log("Corrected:", icon=True)  # Display the image before "Corrected:"
+    log(corrected)  # Display the corrected text
     tts.say(corrected)
     tts.runAndWait()
 
@@ -210,121 +292,6 @@ def select_microphone(event=None):
     global selected_mic
     selected_mic = mic_dropdown.get()
     log(f"Selected microphone: {selected_mic}")
-
-# Define CREDUI_INFO structure
-class CREDUI_INFO(ctypes.Structure):
-    _fields_ = [
-        ("cbSize", wintypes.DWORD),
-        ("hwndParent", wintypes.HWND),
-        ("pszMessageText", wintypes.LPCWSTR),
-        ("pszCaptionText", wintypes.LPCWSTR),
-        ("hbmBanner", wintypes.HBITMAP),
-    ]
-
-# Set up Windows CredUI API
-credui = ctypes.WinDLL('credui.dll')
-
-# Configure CredUIPromptForCredentialsW function signature
-credui.CredUIPromptForCredentialsW.argtypes = [
-    ctypes.POINTER(CREDUI_INFO),
-    wintypes.LPCWSTR,
-    wintypes.HANDLE,
-    wintypes.DWORD,
-    wintypes.LPWSTR,
-    wintypes.ULONG,
-    wintypes.LPWSTR,
-    wintypes.ULONG,
-    ctypes.POINTER(wintypes.BOOL),
-    wintypes.DWORD,
-]
-credui.CredUIPromptForCredentialsW.restype = wintypes.DWORD
-
-# Update the CredUIPromptForCredentialsW flag
-CREDUIWIN_GENERIC = 0x00000001
-CREDUIWIN_SECURE_PROMPT = 0x00001000  # Use this flag for secure prompts
-
-def verify_windows_user():
-    try:
-        # Initialize CREDUI_INFO structure
-        ui_info = CREDUI_INFO()
-        ui_info.cbSize = ctypes.sizeof(CREDUI_INFO)
-        ui_info.hwndParent = wintypes.HWND(root.winfo_id())  # Set parent to the Tkinter window
-        ui_info.pszMessageText = "Enter your password"
-        ui_info.pszCaptionText = "Password Verification"
-        ui_info.hbmBanner = None
-
-        # Username buffer is empty, password buffer for input
-        username = ctypes.create_unicode_buffer("")
-        password = ctypes.create_unicode_buffer(256)
-        save_credentials = wintypes.BOOL(False)
-
-        # Call Windows credential dialog
-        result = credui.CredUIPromptForCredentialsW(
-            ctypes.byref(ui_info),        # CREDUI_INFO
-            "PasswordOnlyApp",            # Target name
-            None,                         # Reserved
-            0,                            # Auth error code
-            username,                     # Username buffer
-            0,                            # Username max length (0 disables username field)
-            password,                     # Password buffer
-            256,                          # Password max length
-            ctypes.byref(save_credentials), # Save checkbox
-            CREDUIWIN_GENERIC | CREDUIWIN_SECURE_PROMPT  # Use combined flags for better compatibility
-        )
-
-        if result == 0:
-            print("Authentication successful!")
-            # Only print password
-            print("Password:", password.value)
-            
-            # Here you would typically validate credentials
-            # For demonstration, just clear the password buffer
-            ctypes.memset(password, 0, ctypes.sizeof(password))
-            open_settings_interface()  # Open settings interface after successful authentication
-            return True
-        else:
-            print("Authentication failed or canceled. Error code:", result)
-            return False
-    except Exception as e:
-        # Log error to file for debugging
-        with open(os.path.join(os.path.dirname(__file__), "error.log"), "a", encoding="utf-8") as f:
-            f.write(f"\n[{time.strftime('%Y-%m-%d %H:%M:%S')}] Authentication error:\n")
-            traceback.print_exc(file=f)
-        log(f"Authentication failed: {e}", level='ERROR')
-        return False
-
-def open_settings_interface():
-    # Open settings dialog
-    def save_settings():
-        key = api_key_entry.get().strip()
-        base = api_base_entry.get().strip()
-        with sqlite3.connect(DB_PATH) as thread_conn:
-            thread_cur = thread_conn.cursor()
-            thread_cur.execute('UPDATE config SET api_key=?, api_base=? WHERE id=1', (key, base))
-            thread_conn.commit()
-        openai.api_key = key
-        openai.api_base = base
-        log("Settings saved.")
-        settings_win.destroy()
-
-    settings_win = Toplevel(root)
-    settings_win.title("Settings")
-    Label(settings_win, text="OpenAI API Key:").grid(row=0, column=0, sticky='w', padx=5, pady=5)
-    api_key_entry = Entry(settings_win, width=50)
-    api_key_entry.grid(row=0, column=1, padx=5, pady=5)
-    api_key_entry.insert(0, openai.api_key)
-
-    Label(settings_win, text="API Base URL:").grid(row=1, column=0, sticky='w', padx=5, pady=5)
-    api_base_entry = Entry(settings_win, width=50)
-    api_base_entry.grid(row=1, column=1, padx=5, pady=5)
-    api_base_entry.insert(0, openai.api_base)
-
-    Button(settings_win, text="Save", command=save_settings).grid(row=2, column=0, columnspan=2, pady=10)
-
-def open_settings():
-    # Trigger Windows authentication when "Settings" is clicked
-    if not verify_windows_user():
-        log("Access to settings denied.", level='ERROR')
 
 # Menu bar
 menu_bar = Menu(root)
@@ -363,16 +330,71 @@ stop_btn.grid(row=0, column=1, padx=5)
 clear_btn.grid(row=0, column=2, padx=5)
 settings_btn.grid(row=0, column=3, padx=5)
 
-mic_dropdown = ttk.Combobox(btn_frame, values=microphones, width=30)
+# Update the microphone dropdown styling in the GUI setup
+mic_dropdown = ttk.Combobox(btn_frame, values=microphones, width=20, font=("Arial", 12))
 mic_dropdown.set(selected_mic)
-mic_dropdown.grid(row=0, column=4, padx=5)
+mic_dropdown.grid(row=0, column=4, padx=5, pady=5, sticky='ew')
 mic_dropdown.bind('<<ComboboxSelected>>', select_microphone)
+
+# Adjust column weights to ensure consistent alignment
+btn_frame.grid_columnconfigure(4, weight=1)
 
 # Manual text entry
 manual_input_frame = tk.Frame(root)
-manual_entry = tk.Text(manual_input_frame, height=4, width=70, font=("Arial", 12))
-manual_entry.pack(side=tk.LEFT)
+manual_entry = tk.Text(manual_input_frame, height=4, width=40, font=("Arial", 12))
+manual_entry.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=5, pady=5)
 submit_btn = tk.Button(manual_input_frame, text="Submit", font=("Arial", 12), command=submit_manual_text)
-submit_btn.pack(side=tk.LEFT)
+submit_btn.pack(side=tk.TOP, pady=10)
+
+# Function to handle system tray icon actions
+def on_quit(icon, item):
+    root.quit()
+    icon.stop()
+
+# Initialize the system tray icon
+tray_icon = None  # Declare globally to manage its lifecycle
+tray_icon_initialized = False  # Flag to ensure the tray icon is initialized only once
+
+def setup_system_tray():
+    global tray_icon, tray_icon_initialized
+    if tray_icon_initialized:  # Prevent multiple tray icons
+        return
+    if os.path.exists(ico_path):
+        tray_image = Image.open(ico_path)
+        menu = pystray.Menu(item('Quit', on_quit))
+        tray_icon = pystray.Icon("needyamin", tray_image, "Speech Assistant", menu)
+        tray_icon_initialized = True  # Mark as initialized
+        threading.Thread(target=tray_icon.run, daemon=True).start()
+
+# Ensure the icon is displayed in the taskbar and start bar
+def set_taskbar_icon():
+    if os.path.exists(ico_path):
+        try:
+            root.iconbitmap(ico_path)  # Set the taskbar icon for the window
+            # Explicitly set the taskbar icon using ctypes
+            hwnd = ctypes.windll.user32.GetAncestor(root.winfo_id(), 2)  # Get the top-level window handle
+            if hwnd:  # Ensure hwnd is valid
+                hicon = ctypes.windll.user32.LoadImageW(
+                    None, ico_path, 1, 32, 32, 0x00000010  # Load the icon as 32x32
+                )
+                if hicon:  # Ensure hicon is valid
+                    ctypes.windll.user32.SendMessageW(hwnd, 0x80, 0, hicon)  # WM_SETICON for large icon
+                    ctypes.windll.user32.SendMessageW(hwnd, 0x80, 1, hicon)  # WM_SETICON for small icon
+        except Exception as e:
+            print(f"Error setting taskbar icon: {e}")
+
+# Ensure the system tray icon is removed when the application is closed
+def on_close():
+    global tray_icon
+    if tray_icon:
+        tray_icon.stop()  # Stop the system tray icon
+    root.destroy()  # Close the main application window
+
+# Call the functions to set icons
+set_taskbar_icon()  # Set the taskbar/start bar icon
+setup_system_tray()  # Set the system tray icon
+
+# Bind the close event to ensure the system tray icon is removed
+root.protocol("WM_DELETE_WINDOW", on_close)
 
 root.mainloop()
