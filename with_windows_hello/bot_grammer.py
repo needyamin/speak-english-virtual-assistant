@@ -25,6 +25,9 @@ from itertools import cycle
 import queue
 import win32gui
 import win32con
+import winshell
+import pythoncom
+from win32com.client import Dispatch
 
 # Global variables
 tray_icon = None
@@ -556,6 +559,33 @@ if not load_animation():
 # Check internet connection
 if not check_internet():
     root.after(1000, show_no_internet_dialog)
+
+def create_start_menu_shortcut():
+    """Create a shortcut for the app in the Windows Start Menu."""
+    try:
+        # Path to the Start Menu Programs folder
+        start_menu_path = winshell.start_menu()
+        shortcut_path = os.path.join(start_menu_path, "Speech Assistant.lnk")
+
+        # Path to the Python executable and the script
+        target = sys.executable  # Python executable
+        script_path = os.path.abspath(__file__)  # Path to this script
+
+        # Create the shortcut
+        shell = Dispatch("WScript.Shell", pythoncom.CoInitialize())
+        shortcut = shell.CreateShortcut(shortcut_path)
+        shortcut.TargetPath = target
+        shortcut.Arguments = f'"{script_path}"'
+        shortcut.WorkingDirectory = base_dir
+        shortcut.IconLocation = app_icon_path if os.path.exists(app_icon_path) else target
+        shortcut.Save()
+
+        print(f"Shortcut created at: {shortcut_path}")
+    except Exception as e:
+        print(f"Error creating Start Menu shortcut: {e}")
+
+# Call the function to create the shortcut
+create_start_menu_shortcut()
 
 # Start the application
 root.mainloop()
