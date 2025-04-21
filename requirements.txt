@@ -6,3 +6,4 @@ pillow
 pywin32
 openai
 pystray
+winshell

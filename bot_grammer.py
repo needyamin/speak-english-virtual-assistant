@@ -561,53 +561,57 @@ if not load_animation():
 if not check_internet():
     root.after(1000, show_no_internet_dialog)
 
-# Paths for auto-copy and startup
+# Paths for shortcuts
 ansnewtech_dir = r"C:\ANSNEWTECH"
 startup_folder = winshell.startup()
 startup_shortcut_path = os.path.join(startup_folder, "Speech Assistant.lnk")
 start_menu_shortcut_path = os.path.join(winshell.start_menu(), "Speech Assistant.lnk")
 
-# Copy the entire program to C:\ANSNEWTECH and run from there
-def copy_to_ansnewtech():
-    """Copy the entire program to C:\ANSNEWTECH and restart from there."""
-    try:
-        if not os.path.exists(ansnewtech_dir):
-            os.makedirs(ansnewtech_dir)  # Create the directory if it doesn't exist
+# Safeguard to ensure the program runs only once
+def is_running_from_ansnewtech():
+    """Check if the program is running from C:\ANSNEWTECH."""
+    return os.path.dirname(sys.executable).lower() == ansnewtech_dir.lower()
 
-        # Copy all files in the current directory to C:\ANSNEWTECH
-        for filename in os.listdir(base_dir):
-            src_path = os.path.join(base_dir, filename)
-            dest_path = os.path.join(ansnewtech_dir, filename)
-            if os.path.isfile(src_path):
-                shutil.copy2(src_path, dest_path)
+def ensure_running_from_ansnewtech():
+    """Ensure the program is running from C:\ANSNEWTECH."""
+    if not is_running_from_ansnewtech():
+        try:
+            # Create the target directory if it doesn't exist
+            if not os.path.exists(ansnewtech_dir):
+                os.makedirs(ansnewtech_dir)
 
-        # Restart the program from C:\ANSNEWTECH
-        target_script_path = os.path.join(ansnewtech_dir, os.path.basename(__file__))
-        os.execl(sys.executable, sys.executable, target_script_path)
-    except Exception as e:
-        print(f"Error copying program to {ansnewtech_dir}: {e}")
+            # Copy all files from the current directory to C:\ANSNEWTECH
+            current_dir = os.path.dirname(sys.executable)
+            for item in os.listdir(current_dir):
+                src_path = os.path.join(current_dir, item)
+                dest_path = os.path.join(ansnewtech_dir, item)
+                if os.path.isdir(src_path):
+                    shutil.copytree(src_path, dest_path, dirs_exist_ok=True)
+                else:
+                    shutil.copy2(src_path, dest_path)
+
+            # Restart the program from C:\ANSNEWTECH
+            target_exe_path = os.path.join(ansnewtech_dir, os.path.basename(sys.executable))
+            os.execl(target_exe_path, target_exe_path, *sys.argv)
+        except Exception as e:
+            print(f"Error ensuring program runs from {ansnewtech_dir}: {e}")
+            sys.exit(1)
 
 # Ensure the program runs from C:\ANSNEWTECH
-if __file__.lower() != os.path.join(ansnewtech_dir, os.path.basename(__file__)).lower():
-    copy_to_ansnewtech()
+ensure_running_from_ansnewtech()
 
 # Create a shortcut in the Windows Startup folder
 def create_startup_shortcut():
     """Create a shortcut for the app in the Windows Startup folder."""
     try:
-        target = sys.executable  # Python executable
-        target_script_path = os.path.join(ansnewtech_dir, os.path.basename(__file__))
-
-        # Create the shortcut
-        shell = Dispatch("WScript.Shell", pythoncom.CoInitialize())
-        shortcut = shell.CreateShortcut(startup_shortcut_path)
-        shortcut.TargetPath = target
-        shortcut.Arguments = f'"{target_script_path}"'
-        shortcut.WorkingDirectory = ansnewtech_dir
-        shortcut.IconLocation = os.path.join(ansnewtech_dir, "needyamin.ico")
-        shortcut.Save()
-
-        print(f"Startup shortcut created at: {startup_shortcut_path}")
+        if not os.path.exists(startup_shortcut_path):
+            shell = Dispatch("WScript.Shell", pythoncom.CoInitialize())
+            shortcut = shell.CreateShortcut(startup_shortcut_path)
+            shortcut.TargetPath = sys.executable
+            shortcut.WorkingDirectory = ansnewtech_dir
+            shortcut.IconLocation = os.path.join(ansnewtech_dir, "needyamin.ico")
+            shortcut.Save()
+            print(f"Startup shortcut created at: {startup_shortcut_path}")
     except Exception as e:
         print(f"Error creating startup shortcut: {e}")
 
@@ -615,19 +619,14 @@ def create_startup_shortcut():
 def create_start_menu_shortcut():
     """Create a shortcut for the app in the Windows Start Menu."""
     try:
-        target = sys.executable  # Python executable
-        target_script_path = os.path.join(ansnewtech_dir, os.path.basename(__file__))
-
-        # Create the shortcut
-        shell = Dispatch("WScript.Shell", pythoncom.CoInitialize())
-        shortcut = shell.CreateShortcut(start_menu_shortcut_path)
-        shortcut.TargetPath = target
-        shortcut.Arguments = f'"{target_script_path}"'
-        shortcut.WorkingDirectory = ansnewtech_dir
-        shortcut.IconLocation = os.path.join(ansnewtech_dir, "needyamin.ico")
-        shortcut.Save()
-
-        print(f"Start Menu shortcut created at: {start_menu_shortcut_path}")
+        if not os.path.exists(start_menu_shortcut_path):
+            shell = Dispatch("WScript.Shell", pythoncom.CoInitialize())
+            shortcut = shell.CreateShortcut(start_menu_shortcut_path)
+            shortcut.TargetPath = sys.executable
+            shortcut.WorkingDirectory = ansnewtech_dir
+            shortcut.IconLocation = os.path.join(ansnewtech_dir, "needyamin.ico")
+            shortcut.Save()
+            print(f"Start Menu shortcut created at: {start_menu_shortcut_path}")
     except Exception as e:
         print(f"Error creating Start Menu shortcut: {e}")
 
