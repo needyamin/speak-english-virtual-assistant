@@ -1,0 +1,1 @@
+pyinstaller bot_grammer.spec
