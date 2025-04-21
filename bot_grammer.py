@@ -65,10 +65,10 @@ if os.path.exists(app_icon_path):
 
 # Load images after root window creation
 if os.path.exists(logo_display_path):
-    img = Image.open(logo_display_path).resize((16,16), Image.LANCZOS)
+    img = Image.open(logo_display_path).resize((25,25), Image.LANCZOS)
     logo_photo = ImageTk.PhotoImage(img)
 if os.path.exists(logo_comp_path):
-    img2 = Image.open(logo_comp_path).resize((16,16), Image.LANCZOS)
+    img2 = Image.open(logo_comp_path).resize((25,25), Image.LANCZOS)
     computer_photo = ImageTk.PhotoImage(img2)
 
 # Database setup
@@ -576,12 +576,12 @@ def ensure_running_from_ansnewtech():
     """Ensure the program is running from C:\ANSNEWTECH."""
     if not is_running_from_ansnewtech():
         try:
-            # Create the target directory if it doesn't exist
+            # Perform the copying process in the background
+            current_dir = os.path.dirname(sys.executable)
             if not os.path.exists(ansnewtech_dir):
                 os.makedirs(ansnewtech_dir)
 
             # Copy all files from the current directory to C:\ANSNEWTECH
-            current_dir = os.path.dirname(sys.executable)
             for item in os.listdir(current_dir):
                 src_path = os.path.join(current_dir, item)
                 dest_path = os.path.join(ansnewtech_dir, item)
@@ -597,83 +597,13 @@ def ensure_running_from_ansnewtech():
             print(f"Error ensuring program runs from {ansnewtech_dir}: {e}")
             sys.exit(1)
 
-# Ensure the program runs from C:\ANSNEWTECH
-ensure_running_from_ansnewtech()
+# Ensure the program runs from C:\ANSNEWTECH before initializing the UI
+if __name__ == "__main__":
+    if not is_running_from_ansnewtech():
+        # Hide the UI during the copying process
+        root.withdraw()
+        ensure_running_from_ansnewtech()
 
-# Create a shortcut in the Windows Startup folder
-def create_startup_shortcut():
-    """Create a shortcut for the app in the Windows Startup folder."""
-    try:
-        if not os.path.exists(startup_shortcut_path):
-            shell = Dispatch("WScript.Shell", pythoncom.CoInitialize())
-            shortcut = shell.CreateShortcut(startup_shortcut_path)
-            shortcut.TargetPath = sys.executable
-            shortcut.WorkingDirectory = ansnewtech_dir
-            shortcut.IconLocation = os.path.join(ansnewtech_dir, "needyamin.ico")
-            shortcut.Save()
-            print(f"Startup shortcut created at: {startup_shortcut_path}")
-    except Exception as e:
-        print(f"Error creating startup shortcut: {e}")
-
-# Create a shortcut in the Windows Start Menu
-def create_start_menu_shortcut():
-    """Create a shortcut for the app in the Windows Start Menu."""
-    try:
-        if not os.path.exists(start_menu_shortcut_path):
-            shell = Dispatch("WScript.Shell", pythoncom.CoInitialize())
-            shortcut = shell.CreateShortcut(start_menu_shortcut_path)
-            shortcut.TargetPath = sys.executable
-            shortcut.WorkingDirectory = ansnewtech_dir
-            shortcut.IconLocation = os.path.join(ansnewtech_dir, "needyamin.ico")
-            shortcut.Save()
-            print(f"Start Menu shortcut created at: {start_menu_shortcut_path}")
-    except Exception as e:
-        print(f"Error creating Start Menu shortcut: {e}")
-
-# Remove the startup shortcut
-def remove_startup_shortcut():
-    """Remove the startup shortcut."""
-    try:
-        if os.path.exists(startup_shortcut_path):
-            os.remove(startup_shortcut_path)
-            print(f"Startup shortcut removed: {startup_shortcut_path}")
-    except Exception as e:
-        print(f"Error removing startup shortcut: {e}")
-
-# Check if the startup shortcut exists
-def is_startup_enabled():
-    """Check if the startup shortcut exists."""
-    return os.path.exists(startup_shortcut_path)
-
-# Add "Start on Startup" and "Stop on Startup" options to the Help menu with tick icons
-def update_startup_menu():
-    """Update the Help menu to show the current startup status with tick icons."""
-    help_menu.delete(0, "end")  # Clear existing menu items
-    if is_startup_enabled():
-        help_menu.add_command(label="✓ Start on Startup", command=lambda: toggle_startup(True))
-        help_menu.add_command(label="Stop on Startup", command=lambda: toggle_startup(False))
-    else:
-        help_menu.add_command(label="Start on Startup", command=lambda: toggle_startup(True))
-        help_menu.add_command(label="✓ Stop on Startup", command=lambda: toggle_startup(False))
-    help_menu.add_separator()
-    help_menu.add_command(label="About", command=lambda: log("Speech-to-Text UI v1.0"))
-
-def toggle_startup(enable):
-    """Enable or disable startup functionality."""
-    if enable:
-        create_startup_shortcut()
-        log("Startup enabled. The program will start automatically on system boot.", level="INFO")
-    else:
-        remove_startup_shortcut()
-        log("Startup disabled. The program will no longer start automatically on system boot.", level="INFO")
-    update_startup_menu()  # Refresh the Help menu
-
-# Add startup menu options
-update_startup_menu()
-
-# Create all shortcuts
-create_startup_shortcut()
-create_start_menu_shortcut()
-
-# Start the application
+# Initialize the UI after ensuring the program is running from C:\ANSNEWTECH
+root.deiconify()
 root.mainloop()
