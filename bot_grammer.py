@@ -40,6 +40,8 @@ loading_label = None
 loading_frames = None
 loading_thread = None
 message_queue = queue.Queue()
+is_speaking = False
+tts_engine = None
 
 # Initialize root window first
 root = tk.Tk()
@@ -115,7 +117,6 @@ else:
 
 # Initialize recognizer and TTS
 recognizer = sr.Recognizer()
-tts = pyttsx3.init()
 recording = threading.Event()
 frames = []
 stream = None
@@ -175,13 +176,28 @@ def create_message_bubble(parent, message, is_bot=True, icon_image=None):
     bubble_frame, content_frame = create_rounded_frame(frame, bubble_color)
     bubble_frame.pack(pady=5, padx=10, anchor='w' if is_bot else 'e', fill='x')
     
+    # Time and copy button frame
+    time_frame = Frame(content_frame, bg=bubble_color)
+    time_frame.pack(fill='x', padx=5, pady=(5,0))
+    
     # Time label
-    time_label = Label(content_frame, 
+    time_label = Label(time_frame, 
                       text=time.strftime('%d %B %Y: %I:%M %p').lstrip('0'),
                       font=('Consolas', 8),
                       fg='gray',
                       bg=bubble_color)
-    time_label.pack(padx=5, pady=(5,0), anchor='w')
+    time_label.pack(side='left', padx=(0,10))
+    
+    # Copy button
+    copy_button = Button(time_frame,
+                        text='📋 Copy',
+                        font=('Consolas', 8),
+                        bg='#4CAF50',
+                        fg='white',
+                        relief='flat',
+                        cursor='hand2',
+                        width=8)
+    copy_button.pack(side='left')
     
     # Message content frame
     msg_content = Frame(content_frame, bg=bubble_color)
@@ -192,16 +208,12 @@ def create_message_bubble(parent, message, is_bot=True, icon_image=None):
         icon_label = Label(msg_content, image=icon_image, bg=bubble_color)
         icon_label.pack(side='left', padx=(0,5))
     
-    # Message text with copy button
+    # Message text frame
     text_frame = Frame(msg_content, bg=bubble_color)
     text_frame.pack(side='left', fill='x', expand=True)
     
-    # Create a frame for the message text
-    msg_text_frame = Frame(text_frame, bg=bubble_color)
-    msg_text_frame.pack(side='left', fill='x', expand=True)
-    
     # Create a text widget for the message
-    msg_text = Text(msg_text_frame,
+    msg_text = Text(text_frame,
                    wrap='word',
                    width=60,
                    height=1,
@@ -222,32 +234,45 @@ def create_message_bubble(parent, message, is_bot=True, icon_image=None):
         msg_text.configure(height=line_count)
         # Update the canvas height
         canvas = bubble_frame.winfo_children()[0]
-        canvas.configure(height=line_count * 20 + 60)  # 20 pixels per line + padding
+        # Calculate required height: line_count * line_height + padding
+        required_height = line_count * 20 + 60  # 20 pixels per line + padding
+        canvas.configure(height=required_height)
+        # Update the frame to accommodate the new height
+        frame.update_idletasks()
     
-    # Copy button frame
-    copy_frame = Frame(text_frame, bg=bubble_color)
-    copy_frame.pack(side='right', padx=(5,0))
+    # Call adjust_height after the widget is fully created
+    msg_text.after(10, adjust_height)
     
-    # Copy button
     def copy_text():
-        root.clipboard_clear()
-        root.clipboard_append(message)
-        root.update()
-        # Show a temporary "Copied!" message
-        copy_btn.config(text="Copied!")
-        root.after(1000, lambda: copy_btn.config(text="Copy"))
+        try:
+            # Copy text to clipboard
+            root.clipboard_clear()
+            root.clipboard_append(message)
+            root.update()
+            
+            # Show a temporary "Copied!" label with animation
+            copied_label = Label(time_frame,
+                               text='✓ Copied!',
+                               font=('Consolas', 8),
+                               fg='green',
+                               bg=bubble_color)
+            copied_label.pack(side='left', padx=(5,0))
+            
+            # Animate the copied label
+            def fade_out():
+                copied_label.configure(fg='#00FF00')
+                time_frame.after(500, lambda: copied_label.configure(fg='green'))
+                time_frame.after(1000, copied_label.destroy)
+            
+            fade_out()
+        except Exception as e:
+            print(f"Error copying text: {e}")
     
-    copy_btn = Button(copy_frame, 
-                     text="Copy",
-                     command=copy_text,
-                     font=('Consolas', 8),
-                     bg=bubble_color,
-                     relief='flat',
-                     cursor='hand2')
-    copy_btn.pack(side='top', padx=(5,0))
+    # Bind the copy function to the button
+    copy_button.configure(command=copy_text)
     
-    # Schedule height adjustment
-    root.after(100, adjust_height)
+    # Force update to ensure button is visible
+    frame.update_idletasks()
     
     return frame
 
@@ -490,33 +515,54 @@ def update_status(message):
     status_label.config(text=message)
 
 def start_recording():
-    global stream
-    frames.clear()
-    recording.set()
-    start_btn.config(state='disabled')
-    stop_btn.config(state='normal')
-    update_status("Recording started... Click 'Stop' when done.")  # Update the status bar
-
-    def run_stream():
-        global stream
-        try:
-            stream = sd.InputStream(samplerate=16000, channels=1, callback=audio_callback)
-            with stream:
-                while recording.is_set():
-                    sd.sleep(100)
-        except Exception as e:
-            log(f'Error starting recording: {e}', level='ERROR')
-        finally:
-            stream = None
-            stop_btn.config(state='disabled')
-            start_btn.config(state='normal')
-
-    threading.Thread(target=run_stream, daemon=True).start()
+    global recording, frames, tts_engine
+    try:
+        # Stop any ongoing speech
+        if is_speaking and tts_engine is not None:
+            tts_engine.stop()
+        
+        # Clear previous frames
+        frames.clear()
+        recording.set()
+        
+        # Update UI
+        start_btn.config(state='disabled')
+        stop_btn.config(state='normal')
+        update_status("Recording started... Click 'Stop' when done.")
+        
+        # Start recording in a separate thread
+        threading.Thread(target=run_stream, daemon=True).start()
+    except Exception as e:
+        print(f"Error starting recording: {e}")
+        update_status('Error starting recording')
 
 def stop_recording():
-    recording.clear()
-    update_status("Recording stopped.")  # Update the status bar
-    threading.Thread(target=process_audio, daemon=True).start()
+    global recording
+    try:
+        recording.clear()
+        start_btn.config(state='normal')
+        stop_btn.config(state='disabled')
+        update_status("Recording stopped.")
+        
+        # Process the recorded audio
+        process_audio()
+    except Exception as e:
+        print(f"Error stopping recording: {e}")
+        update_status('Error stopping recording')
+
+def run_stream():
+    global stream
+    try:
+        stream = sd.InputStream(samplerate=16000, channels=1, callback=audio_callback)
+        with stream:
+            while recording.is_set():
+                sd.sleep(100)
+    except Exception as e:
+        print(f'Error starting recording: {e}')
+    finally:
+        stream = None
+        stop_btn.config(state='disabled')
+        start_btn.config(state='normal')
 
 def process_audio():
     if not frames:
@@ -597,13 +643,37 @@ def correct_grammar_gpt(text):
         print(f"OpenAI API Error: {str(e)}")
         return f'Error: {str(e)}'
 
-def play_voice(text):
-    """Play the corrected text using TTS."""
+def initialize_tts():
+    global tts_engine
     try:
-        tts.say(text)
-        tts.runAndWait()
+        tts_engine = pyttsx3.init()
+        return True
     except Exception as e:
-        log(f'Error during voice playback: {e}', level='ERROR')
+        print(f"Error initializing TTS: {e}")
+        return False
+
+def play_voice(text):
+    global is_speaking, tts_engine
+    try:
+        is_speaking = True
+        if tts_engine is None:
+            if not initialize_tts():
+                return
+        tts_engine.say(text)
+        tts_engine.runAndWait()
+    except Exception as e:
+        print(f"Error playing voice: {e}")
+    finally:
+        is_speaking = False
+
+def cleanup_tts():
+    global tts_engine
+    try:
+        if tts_engine is not None:
+            tts_engine.stop()
+            tts_engine = None
+    except Exception as e:
+        print(f"Error cleaning up TTS: {e}")
 
 def initialize_grammar_model():
     """Initialize the grammar correction model."""
@@ -919,38 +989,8 @@ root.grid_rowconfigure(0, weight=1)
 root.grid_columnconfigure(0, weight=1)
 
 # Tray integration
-def restore(icon, item):
-    global tray_icon_initialized
-    if tray_icon:
-        tray_icon.stop()
-    tray_icon_initialized = False
-    root.deiconify()
-
-def quit_app(icon, item):
-    global tray_icon_initialized
-    if tray_icon:
-        tray_icon.stop()
-    tray_icon_initialized = False
-    root.destroy()
-
-def setup_tray():
-    global tray_icon, tray_icon_initialized
-    if tray_icon_initialized:
-        return True
-    try:
-        if tray_icon:
-            tray_icon.stop()
-        img = Image.open(app_icon_path) if os.path.exists(app_icon_path) else None
-        tray_icon = Icon('SpeechApp', img, 'Speech Assistant', menu=(item('Restore', restore), item('Quit', quit_app)))
-        tray_icon_initialized = True
-        threading.Thread(target=tray_icon.run, daemon=True).start()
-        return True
-    except Exception as e:
-        print(f"Error setting up tray icon: {e}")
-        return False
-
-# Center the window on screen
 def center_window(window):
+    """Center the window on the screen."""
     window.update_idletasks()
     width = window.winfo_width()
     height = window.winfo_height()
@@ -958,14 +998,99 @@ def center_window(window):
     y = (window.winfo_screenheight() // 2) - (height // 2)
     window.geometry(f'{width}x{height}+{x}+{y}')
 
-# Bind events
-def on_minimize(event):
-    if root.state() == 'iconic':
-        root.withdraw()
-        setup_tray()
+def setup_tray():
+    global tray_icon, tray_icon_initialized
+    try:
+        if tray_icon_initialized and tray_icon:
+            tray_icon.stop()
+        
+        # Create a default icon if the file doesn't exist
+        if not os.path.exists(app_icon_path):
+            img = Image.new('RGB', (64, 64), color='blue')
+        else:
+            img = Image.open(app_icon_path)
+        
+        # Create the tray icon
+        menu = (
+            item('Restore', restore),
+            item('Quit', quit_app)
+        )
+        
+        tray_icon = Icon('Speech Assistant', img, 'Speech Assistant', menu)
+        tray_icon_initialized = True
+        
+        # Start the tray icon in a separate thread
+        threading.Thread(target=tray_icon.run, daemon=True).start()
+        return True
+    except Exception as e:
+        print(f"Error setting up tray icon: {e}")
+        return False
 
+def on_closing():
+    try:
+        # Hide the window
+        root.withdraw()
+        
+        # Ensure tray icon is set up
+        if not tray_icon_initialized:
+            setup_tray()
+        
+        # Show notification
+        if tray_icon_initialized:
+            tray_icon.notify('Speech Assistant is running in the background', 'Click the tray icon to restore')
+    except Exception as e:
+        print(f"Error minimizing to tray: {e}")
+
+def on_minimize(event):
+    try:
+        # Allow minimizing if user explicitly clicks minimize button
+        if event.widget == root:
+            # Hide the window
+            root.withdraw()
+            
+            # Ensure tray icon is set up
+            if not tray_icon_initialized:
+                setup_tray()
+            
+            # Show notification
+            if tray_icon_initialized:
+                tray_icon.notify('Speech Assistant is running in the background', 'Click the tray icon to restore')
+    except Exception as e:
+        print(f"Error minimizing window: {e}")
+
+def restore(icon, item):
+    try:
+        # Show the window
+        root.deiconify()
+        root.state('normal')
+        root.lift()
+        root.focus_force()
+    except Exception as e:
+        print(f"Error restoring window: {e}")
+
+def quit_app(icon, item):
+    try:
+        # Clean up resources
+        cleanup_tts()
+        
+        # Stop the tray icon
+        if tray_icon_initialized and tray_icon:
+            tray_icon.stop()
+        
+        # Quit the application
+        root.quit()
+        root.destroy()
+    except Exception as e:
+        print(f"Error quitting application: {e}")
+        root.quit()
+        root.destroy()
+
+# Initialize tray icon at startup
+setup_tray()
+
+# Update the window protocol
+root.protocol('WM_DELETE_WINDOW', on_closing)
 root.bind('<Unmap>', on_minimize)
-root.protocol('WM_DELETE_WINDOW', lambda: (root.withdraw(), setup_tray()))
 
 # Center the main window
 center_window(root)
@@ -1052,6 +1177,9 @@ update_startup_menu()
 # Create all shortcuts
 create_startup_shortcut()
 create_start_menu_shortcut()
+
+# Initialize TTS engine at startup
+initialize_tts()
 
 # Start the application
 root.mainloop()
