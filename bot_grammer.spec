@@ -4,7 +4,7 @@ block_cipher = None
 
 a = Analysis(
     ['bot_grammer.py'],
-    pathex=[os.getcwd()],  # Set the current directory as the path
+    pathex=[os.getcwd()],
     binaries=[],
     datas=[
         ('needyamin.ico', '.'), 
@@ -29,23 +29,22 @@ pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 exe = EXE(
     pyz,
     a.scripts,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
     [],
-    exclude_binaries=True,
     name='SpeechAssistant',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    console=False,  # Set to True if you want a console window
-    icon='needyamin.ico',
-)
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    strip=False,
-    upx=True,
     upx_exclude=[],
-    name='SpeechAssistant',
+    runtime_tmpdir=None,
+    console=False,
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+    icon='needyamin.ico',
 )
