@@ -11,7 +11,6 @@ The application follows a clean and interactive design philosophy:
 - **Minimalist UI** with message bubbles for conversational feedback.
 - **Status indicators** and **loading animation** for a responsive user experience.
 - **Always-on** behavior via system tray integration.
-- **Consistent directory execution** by relocating to \`C:\\ANSNEWTECH\`.
 
 ---
 
@@ -23,7 +22,6 @@ The application follows a clean and interactive design philosophy:
 - 🖼️ **Interactive GUI**: Built with Tkinter, includes animations and status updates.
 - 🛎️ **System Tray Integration**: Run in the background with tray icon control.
 - ⚙️ **Customizable Settings**: Configure API keys and preferences.
-- 📁 **Automatic Relocation**: Ensures execution from \`C:\\ANSNEWTECH\` for consistency.
 
 ---
 
@@ -95,9 +93,9 @@ speak-english-virtual-assistant/
 
 ## ⚙️ Key Functionalities
 
-### Automatic Relocation to \`C:\\ANSNEWTECH\`
+### Startup Integration
 
-The app verifies it's running from \`C:\\ANSNEWTECH\`. If not, it auto-copies itself to that location and restarts.
+The app can be configured to start automatically with Windows through the Help menu.
 
 ---
 

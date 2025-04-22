@@ -8,9 +8,8 @@ import numpy as np
 import speech_recognition as sr
 import pyttsx3
 import tkinter as tk
-from tkinter import scrolledtext, ttk, Menu, Toplevel, Label, Entry, Button, Frame, Canvas
+from tkinter import scrolledtext, ttk, Menu, Toplevel, Label, Entry, Button, Frame, Canvas, Checkbutton, BooleanVar, Text
 import sqlite3
-import openai
 import time
 import os
 from PIL import Image, ImageTk, ImageSequence
@@ -28,7 +27,9 @@ import win32con
 import winshell
 import pythoncom
 from win32com.client import Dispatch
-import shutil  # For copying files
+import shutil
+import re
+import openai
 
 # Global variables
 tray_icon = None
@@ -45,6 +46,9 @@ root = tk.Tk()
 root.title('🎧 Speech → 🧠 AI Grammar Fix → 🗣️ Voice')
 root.geometry('700x650')
 
+# Initialize Tkinter variables after root window
+use_online_mode = BooleanVar(root, value=False)
+
 # Paths
 base_dir = os.path.dirname(__file__)
 DB_PATH = os.path.join(base_dir, 'data.sqlite')
@@ -52,13 +56,16 @@ app_icon_path = os.path.join(base_dir, 'needyamin.ico')
 logo_display_path = os.path.join(base_dir, 'logo_display.png')
 logo_comp_path = os.path.join(base_dir, 'logo_display_computer.png')
 
+# Set permanent API base URL
+OPENAI_API_BASE = "https://openrouter.ai/api/v1"
+
 # Set window icon (both titlebar and taskbar)
 if os.path.exists(app_icon_path):
     try:
         # Set the taskbar icon
         myappid = 'needyamin.speechapp.1.0'
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
-        root.iconbitmap(default=app_icon_path)
+        root.iconbitmap(default=app_icon_path)   
         root.iconbitmap(app_icon_path)
     except Exception as e:
         print(f"Error setting icon: {e}")
@@ -77,19 +84,33 @@ cur = conn.cursor()
 cur.execute('''CREATE TABLE IF NOT EXISTS config (
     id INTEGER PRIMARY KEY,
     api_key TEXT,
-    api_base TEXT,
     password TEXT
 )''')
 conn.commit()
-cur.execute('SELECT api_key, api_base FROM config WHERE id=1')
+cur.execute('SELECT api_key FROM config WHERE id=1')
 row = cur.fetchone()
 if row:
-    openai.api_key, openai.api_base = row
+    openai.api_key = row[0]
 else:
     openai.api_key = ''
-    openai.api_base = ''
-    cur.execute('INSERT OR REPLACE INTO config (id, api_key, api_base, password) VALUES (1, ?, ?, ?)',
-                ('', '', 'admin'))
+    cur.execute('INSERT OR REPLACE INTO config (id, api_key, password) VALUES (1, ?, ?)',
+                ('', 'admin'))
+    conn.commit()
+
+# Set the permanent API base URL
+openai.api_base = OPENAI_API_BASE
+
+# Load saved settings
+cur.execute('SELECT api_key, password FROM config WHERE id=1')
+row = cur.fetchone()
+if row:
+    openai.api_key = row[0]
+    use_online_mode.set(row[1] != '')
+else:
+    openai.api_key = ''
+    use_online_mode.set(False)
+    cur.execute('INSERT INTO config (id, api_key, password) VALUES (1, ?, ?)',
+                (openai.api_key, use_online_mode.get()))
     conn.commit()
 
 # Initialize recognizer and TTS
@@ -147,6 +168,89 @@ def retry_connection(dialog):
     else:
         log('Still no internet connection.', level='ERROR')
 
+def create_message_bubble(parent, message, is_bot=True, icon_image=None):
+    frame = Frame(parent, bg=parent['bg'])
+    
+    bubble_color = '#E8E8E8' if is_bot else '#DCF8C6'
+    bubble_frame, content_frame = create_rounded_frame(frame, bubble_color)
+    bubble_frame.pack(pady=5, padx=10, anchor='w' if is_bot else 'e', fill='x')
+    
+    # Time label
+    time_label = Label(content_frame, 
+                      text=time.strftime('%d %B %Y: %I:%M %p').lstrip('0'),
+                      font=('Consolas', 8),
+                      fg='gray',
+                      bg=bubble_color)
+    time_label.pack(padx=5, pady=(5,0), anchor='w')
+    
+    # Message content frame
+    msg_content = Frame(content_frame, bg=bubble_color)
+    msg_content.pack(fill='x', padx=5, pady=5)
+    
+    # Icon (if provided)
+    if icon_image:
+        icon_label = Label(msg_content, image=icon_image, bg=bubble_color)
+        icon_label.pack(side='left', padx=(0,5))
+    
+    # Message text with copy button
+    text_frame = Frame(msg_content, bg=bubble_color)
+    text_frame.pack(side='left', fill='x', expand=True)
+    
+    # Create a frame for the message text
+    msg_text_frame = Frame(text_frame, bg=bubble_color)
+    msg_text_frame.pack(side='left', fill='x', expand=True)
+    
+    # Create a text widget for the message
+    msg_text = Text(msg_text_frame,
+                   wrap='word',
+                   width=60,
+                   height=1,
+                   font=('Consolas', 11),
+                   bg=bubble_color,
+                   relief='flat',
+                   padx=5,
+                   pady=5)
+    msg_text.pack(side='left', fill='x', expand=True)
+    msg_text.insert('1.0', message)
+    msg_text.configure(state='disabled')
+    
+    # Adjust height based on content
+    def adjust_height():
+        # Count the number of lines in the text
+        line_count = msg_text.count('1.0', 'end', 'lines')[0]
+        # Set the height to match the content
+        msg_text.configure(height=line_count)
+        # Update the canvas height
+        canvas = bubble_frame.winfo_children()[0]
+        canvas.configure(height=line_count * 20 + 60)  # 20 pixels per line + padding
+    
+    # Copy button frame
+    copy_frame = Frame(text_frame, bg=bubble_color)
+    copy_frame.pack(side='right', padx=(5,0))
+    
+    # Copy button
+    def copy_text():
+        root.clipboard_clear()
+        root.clipboard_append(message)
+        root.update()
+        # Show a temporary "Copied!" message
+        copy_btn.config(text="Copied!")
+        root.after(1000, lambda: copy_btn.config(text="Copy"))
+    
+    copy_btn = Button(copy_frame, 
+                     text="Copy",
+                     command=copy_text,
+                     font=('Consolas', 8),
+                     bg=bubble_color,
+                     relief='flat',
+                     cursor='hand2')
+    copy_btn.pack(side='top', padx=(5,0))
+    
+    # Schedule height adjustment
+    root.after(100, adjust_height)
+    
+    return frame
+
 def create_rounded_frame(parent, bg_color, padding=10):
     frame = Frame(parent, bg=parent['bg'])
     
@@ -179,45 +283,11 @@ def create_rounded_frame(parent, bg_color, padding=10):
     inner_frame = Frame(canvas, bg=bg_color)
     canvas.create_window(padding, padding, 
                         window=inner_frame,
-                        anchor='nw')
+                        anchor='nw',
+                        width=480)  # Set a fixed width for the inner frame
     
     return frame, inner_frame
 
-def create_message_bubble(parent, message, is_bot=True, icon_image=None):
-    frame = Frame(parent, bg=parent['bg'])
-    
-    bubble_color = '#E8E8E8' if is_bot else '#DCF8C6'
-    bubble_frame, content_frame = create_rounded_frame(frame, bubble_color)
-    bubble_frame.pack(pady=5, padx=10, anchor='w' if is_bot else 'e')
-    
-    # Time label
-    time_label = Label(content_frame, 
-                      text=time.strftime('%d %B %Y: %I:%M %p').lstrip('0'),
-                      font=('Consolas', 8),
-                      fg='gray',
-                      bg=bubble_color)
-    time_label.pack(padx=5, pady=(5,0), anchor='w')
-    
-    # Message content frame
-    msg_content = Frame(content_frame, bg=bubble_color)
-    msg_content.pack(fill='x', padx=5, pady=5)
-    
-    # Icon (if provided)
-    if icon_image:
-        icon_label = Label(msg_content, image=icon_image, bg=bubble_color)
-        icon_label.pack(side='left', padx=(0,5))
-    
-    # Message text
-    msg_label = Label(msg_content,
-                     text=message,
-                     wraplength=400,
-                     justify='left',
-                     bg=bubble_color,
-                     font=('Consolas', 11))
-    msg_label.pack(side='left', fill='x', expand=True)
-    
-    return frame
-	
 def log(message, level='INFO', icon_image=None):
     output.configure(state='normal')
     
@@ -237,19 +307,41 @@ def log(message, level='INFO', icon_image=None):
     
     # Create and pack the message bubble
     bubble = create_message_bubble(output, message, is_bot, icon_image)
-    output.window_create('end', window=bubble)
-    output.insert('end', '\n')
+    
+    # Insert at the beginning of the text widget
+    output.window_create('1.0', window=bubble)
+    output.insert('1.0', '\n')
     
     output.configure(state='disabled')
-    output.see('end')
+    # Ensure the latest message is visible
+    output.see('1.0')
+    
+    # Update the message bubble's width after it's been added to the window
+    def update_width():
+        try:
+            for child in bubble.winfo_children():
+                if isinstance(child, Frame):
+                    for grandchild in child.winfo_children():
+                        if isinstance(grandchild, Frame):
+                            for widget in grandchild.winfo_children():
+                                if isinstance(widget, Text):
+                                    window_width = output.winfo_width()
+                                    widget.configure(width=min(40, (window_width - 100) // 10))
+        except Exception as e:
+            print(f"Error updating width: {e}")
+    
+    # Schedule the update after the window has been drawn
+    root.after(100, update_width)
 
 def log_plain(message, level='INFO'):
     """Log plain messages without creating a conversation bubble."""
     output.configure(state='normal')
     timestamp = time.strftime('%d %B %Y: %I:%M %p').lstrip('0')
-    output.insert('end', f'{timestamp} - {message}\n', level)
+    # Insert at the beginning
+    output.insert('1.0', f'{timestamp} - {message}\n', level)
     output.configure(state='disabled')
-    output.see('end')
+    # Ensure the latest message is visible
+    output.see('1.0')
 
 def load_animation():
     global loading_frames
@@ -312,37 +404,73 @@ def verify_password():
 def open_settings_interface():
     def save():
         key = key_entry.get().strip()
-        base = base_entry.get().strip()
         newp = new_entry.get().strip()
         conf = conf_entry.get().strip()
+        
+        # Get current password
         cur.execute('SELECT password FROM config WHERE id=1')
-        oldp = cur.fetchone()[0]
+        current_password = cur.fetchone()[0]
+        
         if newp and newp != conf:
             log('Passwords do not match.', level='ERROR')
             return
-        cur.execute('UPDATE config SET api_key=?, api_base=?, password=? WHERE id=1',
-                    (key, base, newp or oldp))
+        
+        # Save settings
+        cur.execute('UPDATE config SET api_key=?, password=? WHERE id=1',
+                    (key, newp or current_password))
         conn.commit()
-        openai.api_key, openai.api_base = key, base
+        
+        # Update OpenAI configuration
+        openai.api_key = key
+        
+        # Test the API connection
+        try:
+            client = openai.OpenAI(
+                api_key=key,
+                base_url=OPENAI_API_BASE
+            )
+            # Make a test call
+            response = client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You are an English grammar expert. Correct any grammar, spelling, or punctuation errors in the text while maintaining the original meaning. Keep the response concise and clear."},
+                    {"role": "user", "content": "Test"}
+                ],
+                temperature=0.3,
+                max_tokens=5
+            )
+            log('API connection test successful.', level='INFO')
+        except Exception as e:
+            log(f'API connection test failed: {str(e)}', level='ERROR')
+        
         log('Settings saved.')
         sett.destroy()
     
     sett = Toplevel(root)
     sett.title('Settings')
+    
+    # Get current settings
+    cur.execute('SELECT api_key, password FROM config WHERE id=1')
+    current_settings = cur.fetchone()
+    current_key = current_settings[0] if current_settings else ''
+    
     Label(sett, text='OpenAI API Key:').grid(row=0, column=0, padx=5, pady=5)
     key_entry = Entry(sett, width=50)
     key_entry.grid(row=0, column=1, padx=5, pady=5)
-    key_entry.insert(0, openai.api_key)
+    key_entry.insert(0, current_key)
+    
     Label(sett, text='API Base URL:').grid(row=1, column=0, padx=5, pady=5)
-    base_entry = Entry(sett, width=50)
-    base_entry.grid(row=1, column=1, padx=5, pady=5)
-    base_entry.insert(0, openai.api_base)
+    base_label = Label(sett, text=OPENAI_API_BASE, width=50)
+    base_label.grid(row=1, column=1, padx=5, pady=5)
+    
     Label(sett, text='New Password:').grid(row=2, column=0, padx=5, pady=5)
     new_entry = Entry(sett, show='*', width=50)
     new_entry.grid(row=2, column=1, padx=5, pady=5)
+    
     Label(sett, text='Confirm Password:').grid(row=3, column=0, padx=5, pady=5)
     conf_entry = Entry(sett, show='*', width=50)
     conf_entry.grid(row=3, column=1, padx=5, pady=5)
+    
     Button(sett, text='Save', command=save).grid(row=4, column=0, columnspan=2, pady=10)
 
 def open_settings():
@@ -447,6 +575,28 @@ def show_correction(text):
     threading.Thread(target=process_correction, daemon=True).start()
     root.after(100, check_result)
 
+def correct_grammar_gpt(text):
+    try:
+        if not openai.api_key:
+            return "Error: OpenAI API key not set. Please configure it in Settings."
+            
+        client = openai.OpenAI(
+            api_key=openai.api_key,
+            base_url=OPENAI_API_BASE
+        )
+        
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are an English grammar assistant."},
+                {"role": "user", "content": text}
+            ]
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        print(f"OpenAI API Error: {str(e)}")
+        return f'Error: {str(e)}'
+
 def play_voice(text):
     """Play the corrected text using TTS."""
     try:
@@ -455,20 +605,270 @@ def play_voice(text):
     except Exception as e:
         log(f'Error during voice playback: {e}', level='ERROR')
 
-def correct_grammar_gpt(text):
+def initialize_grammar_model():
+    """Initialize the grammar correction model."""
+    global grammar_model, tokenizer
     try:
-        resp = openai.ChatCompletion.create(
-            model='gpt-3.5-turbo',
-            messages=[
-                {'role':'system','content':'You are an English grammar assistant.'},
-                {'role':'user','content':text}
-            ]
-        )
-        return resp.choices[0].message.content.strip()
+        if use_online_mode.get():
+            # Load a pre-trained grammar correction model
+            model_name = "deep-learning-analytics/writing-assistant"
+            tokenizer = AutoTokenizer.from_pretrained(model_name)
+            grammar_model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+            return True
+        return False
     except Exception as e:
-        return f'(Error: {e})'
+        print(f"Error initializing grammar model: {e}")
+        return False
 
-# GUI Setup
+class GrammarCorrector:
+    """Advanced grammar correction system with dual-mode support."""
+    
+    def __init__(self):
+        # Basic grammar rules for offline mode
+        self.basic_rules = {
+            # Subject-verb agreement
+            r'\b(I|you|we|they)\s+(is|was)\b': lambda m: f"{m.group(1)} {'am' if m.group(1)=='I' else 'are' if m.group(2)=='is' else 'were'}",
+            r'\b(he|she|it)\s+are\b': lambda m: f"{m.group(1)} is",
+            r'\b(he|she|it)\s+were\b': lambda m: f"{m.group(1)} was",
+            
+            # Articles
+            r'\b(a)\s+([aeiouAEIOU][a-zA-Z]*)\b': lambda m: f"an {m.group(2)}",
+            r'\b(an)\s+([^aeiouAEIOU][a-zA-Z]*)\b': lambda m: f"a {m.group(2)}",
+            
+            # Common mistakes
+            r'\b(could|would|should|must|will|can)\s+of\b': lambda m: f"{m.group(1)} have",
+            r'\bin\s+regards\s+to\b': "regarding",
+            r'\bless\s+([a-zA-Z]+s)\b': lambda m: f"fewer {m.group(1)}",
+            r'\bmore\s+better\b': "better",
+            r'\bmost\s+biggest\b': "biggest",
+            r'\bvery\s+unique\b': "unique",
+            
+            # Punctuation
+            r'\s+([.,!?:;])': r'\1',
+            r'([.,!?:;])([^\s])': r'\1 \2',
+            r'\s+': ' ',
+        }
+        
+        # Advanced rules for offline mode
+        self.advanced_rules = {
+            # Complex sentence structure
+            r'\b(however|therefore|moreover|furthermore|nevertheless)\s+([a-z])': lambda m: f"{m.group(1)}, {m.group(2).upper()}",
+            r'\b(in\s+addition|for\s+example|in\s+fact|in\s+other\s+words)\s+([a-z])': lambda m: f"{m.group(1)}, {m.group(2).upper()}",
+            
+            # Word choice improvements
+            r'\b(affect|effect)\b': self.fix_affect_effect,
+            r'\b(accept|except)\b': self.fix_accept_except,
+            r'\b(advice|advise)\b': self.fix_advice_advise,
+            
+            # Tense consistency
+            r'\b(yesterday|last week|last month|ago)\s+([a-zA-Z]*(?:s|es|ies))\b': lambda m: f"{m.group(1)} {self.to_past_tense(m.group(2))}",
+            r'\b(tomorrow|next week|next month)\s+([a-zA-Z]*ed)\b': lambda m: f"{m.group(1)} {self.to_future_tense(m.group(2))}",
+        }
+
+    def correct_text(self, text):
+        """Apply grammar corrections based on internet availability."""
+        if check_internet() and openai.api_key:
+            return self.correct_text_online(text)
+        else:
+            return self.correct_text_offline(text)
+
+    def correct_text_online(self, text):
+        """Use OpenAI for grammar correction."""
+        try:
+            print(f"Using API Key: {openai.api_key[:10]}...")
+            print(f"Using API Base: {OPENAI_API_BASE}")
+            
+            # Configure OpenAI client
+            client = openai.OpenAI(
+                api_key=openai.api_key,
+                base_url=OPENAI_API_BASE
+            )
+            
+            # Make the API call
+            response = client.chat.completions.create(
+                model="openai/gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You are an English grammar expert. Correct any grammar, spelling, or punctuation errors in the text while maintaining the original meaning. Keep the response concise and clear."},
+                    {"role": "user", "content": text}
+                ],
+                temperature=0.3,
+                max_tokens=500
+            )
+            
+            print("API Response received successfully")
+            return response.choices[0].message.content.strip()
+        except Exception as e:
+            print(f"Error in online correction: {str(e)}")
+            print(f"Error type: {type(e)}")
+            import traceback
+            print(f"Traceback: {traceback.format_exc()}")
+            return self.correct_text_offline(text)
+
+    def correct_text_offline(self, text):
+        """Apply offline grammar corrections."""
+        # Split into sentences
+        sentences = re.split(r'([.!?]+\s+)', text)
+        corrected_sentences = []
+        
+        for i in range(0, len(sentences), 2):
+            sentence = sentences[i]
+            if i + 1 < len(sentences):
+                sentence += sentences[i + 1]
+            
+            # Apply basic rules
+            for pattern, replacement in self.basic_rules.items():
+                sentence = re.sub(pattern, replacement, sentence, flags=re.IGNORECASE)
+            
+            # Apply advanced rules
+            for pattern, replacement in self.advanced_rules.items():
+                sentence = re.sub(pattern, replacement, sentence, flags=re.IGNORECASE)
+            
+            # Capitalize first letter
+            if sentence:
+                sentence = sentence[0].upper() + sentence[1:]
+            
+            corrected_sentences.append(sentence)
+        
+        # Join and clean up
+        text = ''.join(corrected_sentences)
+        text = re.sub(r'\s+', ' ', text)
+        text = re.sub(r'\s*([.,!?:;])', r'\1', text)
+        text = re.sub(r'([.,!?:;])(?=[^\s])', r'\1 ', text)
+        return text.strip()
+
+    def to_past_tense(self, word):
+        """Convert a word to past tense."""
+        irregular = {
+            'go': 'went', 'have': 'had', 'do': 'did', 'say': 'said',
+            'make': 'made', 'take': 'took', 'come': 'came', 'see': 'saw',
+            'know': 'knew', 'get': 'got'
+        }
+        
+        if word.lower() in irregular:
+            return irregular[word.lower()]
+        elif word.endswith('e'):
+            return word + 'd'
+        elif word.endswith('y'):
+            return word[:-1] + 'ied'
+        else:
+            return word + 'ed'
+
+    def to_future_tense(self, word):
+        """Convert a word to future tense."""
+        if word.endswith('ed'):
+            if word.endswith('ied'):
+                return word[:-3] + 'y'
+            return word[:-2]
+        return word
+
+    def fix_affect_effect(self, match):
+        """Context-aware affect/effect correction."""
+        word = match.group(1)
+        prev_words = match.string[:match.start()].split()[-3:]
+        
+        if any(w in prev_words for w in ['the', 'an', 'any', 'no']):
+            return 'effect'
+        if any(w in prev_words for w in ['to', 'will', 'can', 'may']):
+            return 'affect'
+        return word
+
+    def fix_accept_except(self, match):
+        """Context-aware accept/except correction."""
+        word = match.group(1)
+        prev_words = match.string[:match.start()].split()[-3:]
+        
+        if any(w in prev_words for w in ['to', 'will', 'can', 'may']):
+            return 'accept'
+        if any(w in prev_words for w in ['for', 'but']):
+            return 'except'
+        return word
+
+    def fix_advice_advise(self, match):
+        """Context-aware advice/advise correction."""
+        word = match.group(1)
+        prev_words = match.string[:match.start()].split()[-3:]
+        
+        if any(w in prev_words for w in ['the', 'some', 'any', 'good']):
+            return 'advice'
+        if any(w in prev_words for w in ['to', 'will', 'can', 'may']):
+            return 'advise'
+        return word
+
+# Create a global instance of the grammar corrector
+grammar_corrector = GrammarCorrector()
+
+def correct_grammar_offline(text):
+    """Advanced grammar checking using the GrammarCorrector class."""
+    return grammar_corrector.correct_text(text)
+
+# Add this before the menu creation
+def check_api_status():
+    """Check and display API connection status."""
+    status_window = Toplevel(root)
+    status_window.title('API Connection Status')
+    status_window.geometry('400x200')
+    
+    # Center the window
+    status_window.update_idletasks()
+    width = status_window.winfo_width()
+    height = status_window.winfo_height()
+    x = (status_window.winfo_screenwidth() // 2) - (width // 2)
+    y = (status_window.winfo_screenheight() // 2) - (height // 2)
+    status_window.geometry(f'{width}x{height}+{x}+{y}')
+    
+    # Create status frame
+    status_frame = Frame(status_window, padx=20, pady=20)
+    status_frame.pack(expand=True, fill='both')
+    
+    # Check internet connection
+    internet_status = "Connected" if check_internet() else "Not Connected"
+    internet_label = Label(status_frame, text=f"Internet: {internet_status}")
+    internet_label.pack(pady=5)
+    
+    # Check API key
+    api_key_status = "Set" if openai.api_key else "Not Set"
+    api_key_label = Label(status_frame, text=f"API Key: {api_key_status}")
+    api_key_label.pack(pady=5)
+    
+    # Status label
+    status_label = Label(status_frame, text="Testing connection...", fg="blue")
+    status_label.pack(pady=10)
+    
+    # Test button
+    test_button = Button(status_frame, text="Test Connection", command=lambda: test_connection(status_label))
+    test_button.pack(pady=10)
+    
+    # Close button
+    close_button = Button(status_frame, text="Close", command=status_window.destroy)
+    close_button.pack(pady=10)
+    
+    # Test connection immediately
+    test_connection(status_label)
+
+def test_connection(status_label):
+    """Test the API connection and update the status label."""
+    try:
+        if not openai.api_key:
+            status_label.config(text="API Key not set. Please configure it in Settings.", fg="red")
+            return
+            
+        client = openai.OpenAI(
+            api_key=openai.api_key,
+            base_url=OPENAI_API_BASE
+        )
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are an English grammar expert."},
+                {"role": "user", "content": "Test"}
+            ],
+            max_tokens=5
+        )
+        status_label.config(text="API Connection: Successful", fg="green")
+    except Exception as e:
+        status_label.config(text=f"API Connection: Failed - {str(e)}", fg="red")
+
+# Then create the menu
 menu_bar = Menu(root)
 file_menu = Menu(menu_bar, tearoff=0)
 file_menu.add_command(label='Settings', command=open_settings)
@@ -476,7 +876,9 @@ file_menu.add_command(label='Clear Logs', command=lambda: log('Clear Logs'))
 file_menu.add_separator()
 file_menu.add_command(label='Exit', command=root.quit)
 menu_bar.add_cascade(label='File', menu=file_menu)
+
 help_menu = Menu(menu_bar, tearoff=0)
+help_menu.add_command(label='API Status', command=check_api_status)
 help_menu.add_command(label='About', command=lambda: log('Speech-to-Text UI v1.0'))
 menu_bar.add_cascade(label='Help', menu=help_menu)
 root.config(menu=menu_bar)
@@ -519,23 +921,33 @@ root.grid_columnconfigure(0, weight=1)
 # Tray integration
 def restore(icon, item):
     global tray_icon_initialized
-    icon.stop()
+    if tray_icon:
+        tray_icon.stop()
     tray_icon_initialized = False
     root.deiconify()
 
 def quit_app(icon, item):
-    icon.stop()
+    global tray_icon_initialized
+    if tray_icon:
+        tray_icon.stop()
+    tray_icon_initialized = False
     root.destroy()
 
 def setup_tray():
     global tray_icon, tray_icon_initialized
     if tray_icon_initialized:
         return True
-    img = Image.open(app_icon_path) if os.path.exists(app_icon_path) else None
-    tray_icon = Icon('SpeechApp', img, 'Speech Assistant', menu=(item('Restore', restore), item('Quit', quit_app)))
-    tray_icon_initialized = True
-    threading.Thread(target=tray_icon.run, daemon=True).start()
-    return True
+    try:
+        if tray_icon:
+            tray_icon.stop()
+        img = Image.open(app_icon_path) if os.path.exists(app_icon_path) else None
+        tray_icon = Icon('SpeechApp', img, 'Speech Assistant', menu=(item('Restore', restore), item('Quit', quit_app)))
+        tray_icon_initialized = True
+        threading.Thread(target=tray_icon.run, daemon=True).start()
+        return True
+    except Exception as e:
+        print(f"Error setting up tray icon: {e}")
+        return False
 
 # Center the window on screen
 def center_window(window):
@@ -547,7 +959,12 @@ def center_window(window):
     window.geometry(f'{width}x{height}+{x}+{y}')
 
 # Bind events
-root.bind('<Unmap>', lambda e: (root.state()=='iconic' and setup_tray() and root.withdraw()))
+def on_minimize(event):
+    if root.state() == 'iconic':
+        root.withdraw()
+        setup_tray()
+
+root.bind('<Unmap>', on_minimize)
 root.protocol('WM_DELETE_WINDOW', lambda: (root.withdraw(), setup_tray()))
 
 # Center the main window
@@ -562,45 +979,10 @@ if not check_internet():
     root.after(1000, show_no_internet_dialog)
 
 # Paths for shortcuts
-ansnewtech_dir = r"C:\ANSNEWTECH"
 startup_folder = winshell.startup()
 startup_shortcut_path = os.path.join(startup_folder, "Speech Assistant.lnk")
 start_menu_shortcut_path = os.path.join(winshell.start_menu(), "Speech Assistant.lnk")
 
-# Safeguard to ensure the program runs only once
-def is_running_from_ansnewtech():
-    """Check if the program is running from C:\ANSNEWTECH."""
-    return os.path.dirname(sys.executable).lower() == ansnewtech_dir.lower()
-
-def ensure_running_from_ansnewtech():
-    """Ensure the program is running from C:\ANSNEWTECH."""
-    if not is_running_from_ansnewtech():
-        try:
-            # Create the target directory if it doesn't exist
-            if not os.path.exists(ansnewtech_dir):
-                os.makedirs(ansnewtech_dir)
-
-            # Copy all files from the current directory to C:\ANSNEWTECH
-            current_dir = os.path.dirname(sys.executable)
-            for item in os.listdir(current_dir):
-                src_path = os.path.join(current_dir, item)
-                dest_path = os.path.join(ansnewtech_dir, item)
-                if os.path.isdir(src_path):
-                    shutil.copytree(src_path, dest_path, dirs_exist_ok=True)
-                else:
-                    shutil.copy2(src_path, dest_path)
-
-            # Restart the program from C:\ANSNEWTECH
-            target_exe_path = os.path.join(ansnewtech_dir, os.path.basename(sys.executable))
-            os.execl(target_exe_path, target_exe_path, *sys.argv)
-        except Exception as e:
-            print(f"Error ensuring program runs from {ansnewtech_dir}: {e}")
-            sys.exit(1)
-
-# Ensure the program runs from C:\ANSNEWTECH
-ensure_running_from_ansnewtech()
-
-# Create a shortcut in the Windows Startup folder
 def create_startup_shortcut():
     """Create a shortcut for the app in the Windows Startup folder."""
     try:
@@ -608,14 +990,13 @@ def create_startup_shortcut():
             shell = Dispatch("WScript.Shell", pythoncom.CoInitialize())
             shortcut = shell.CreateShortcut(startup_shortcut_path)
             shortcut.TargetPath = sys.executable
-            shortcut.WorkingDirectory = ansnewtech_dir
-            shortcut.IconLocation = os.path.join(ansnewtech_dir, "needyamin.ico")
+            shortcut.WorkingDirectory = os.path.dirname(sys.executable)
+            shortcut.IconLocation = os.path.join(os.path.dirname(sys.executable), "needyamin.ico")
             shortcut.Save()
             print(f"Startup shortcut created at: {startup_shortcut_path}")
     except Exception as e:
         print(f"Error creating startup shortcut: {e}")
 
-# Create a shortcut in the Windows Start Menu
 def create_start_menu_shortcut():
     """Create a shortcut for the app in the Windows Start Menu."""
     try:
@@ -623,14 +1004,13 @@ def create_start_menu_shortcut():
             shell = Dispatch("WScript.Shell", pythoncom.CoInitialize())
             shortcut = shell.CreateShortcut(start_menu_shortcut_path)
             shortcut.TargetPath = sys.executable
-            shortcut.WorkingDirectory = ansnewtech_dir
-            shortcut.IconLocation = os.path.join(ansnewtech_dir, "needyamin.ico")
+            shortcut.WorkingDirectory = os.path.dirname(sys.executable)
+            shortcut.IconLocation = os.path.join(os.path.dirname(sys.executable), "needyamin.ico")
             shortcut.Save()
             print(f"Start Menu shortcut created at: {start_menu_shortcut_path}")
     except Exception as e:
         print(f"Error creating Start Menu shortcut: {e}")
 
-# Remove the startup shortcut
 def remove_startup_shortcut():
     """Remove the startup shortcut."""
     try:
@@ -640,12 +1020,10 @@ def remove_startup_shortcut():
     except Exception as e:
         print(f"Error removing startup shortcut: {e}")
 
-# Check if the startup shortcut exists
 def is_startup_enabled():
     """Check if the startup shortcut exists."""
     return os.path.exists(startup_shortcut_path)
 
-# Add "Start on Startup" and "Stop on Startup" options to the Help menu with tick icons
 def update_startup_menu():
     """Update the Help menu to show the current startup status with tick icons."""
     help_menu.delete(0, "end")  # Clear existing menu items

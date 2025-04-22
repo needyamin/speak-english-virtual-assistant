@@ -4,6 +4,6 @@ SpeechRecognition
 pyttsx3
 pillow
 pywin32
-openai
+openai>=1.0.0
 pystray
 winshell
