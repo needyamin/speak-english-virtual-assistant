@@ -667,11 +667,13 @@ def play_voice(text):
         is_speaking = False
 
 def cleanup_tts():
-    global tts_engine
+    global tts_engine, is_speaking
     try:
         if tts_engine is not None:
-            tts_engine.stop()
+            if is_speaking:
+                tts_engine.stop()
             tts_engine = None
+        is_speaking = False
     except Exception as e:
         print(f"Error cleaning up TTS: {e}")
 
@@ -1028,6 +1030,9 @@ def setup_tray():
 
 def on_closing():
     try:
+        # Clean up TTS first
+        cleanup_tts()
+        
         # Hide the window
         root.withdraw()
         
@@ -1070,7 +1075,7 @@ def restore(icon, item):
 
 def quit_app(icon, item):
     try:
-        # Clean up resources
+        # Clean up TTS first
         cleanup_tts()
         
         # Stop the tray icon
@@ -1182,4 +1187,12 @@ create_start_menu_shortcut()
 initialize_tts()
 
 # Start the application
-root.mainloop()
+if __name__ == '__main__':
+    try:
+        root.mainloop()
+    except Exception as e:
+        print(f"Error in main loop: {e}")
+    finally:
+        cleanup_tts()
+        if tray_icon_initialized and tray_icon:
+            tray_icon.stop()
