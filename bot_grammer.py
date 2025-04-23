@@ -74,10 +74,10 @@ if os.path.exists(app_icon_path):
 
 # Load images after root window creation
 if os.path.exists(logo_display_path):
-    img = Image.open(logo_display_path).resize((16,16), Image.LANCZOS)
+    img = Image.open(logo_display_path).resize((32,32), Image.LANCZOS)
     logo_photo = ImageTk.PhotoImage(img)
 if os.path.exists(logo_comp_path):
-    img2 = Image.open(logo_comp_path).resize((16,16), Image.LANCZOS)
+    img2 = Image.open(logo_comp_path).resize((32,32), Image.LANCZOS)
     computer_photo = ImageTk.PhotoImage(img2)
 
 # Database setup
