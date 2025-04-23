@@ -174,11 +174,11 @@ def create_message_bubble(parent, message, is_bot=True, icon_image=None):
     
     bubble_color = '#E8E8E8' if is_bot else '#DCF8C6'
     bubble_frame, content_frame = create_rounded_frame(frame, bubble_color)
-    bubble_frame.pack(pady=5, padx=10, anchor='w' if is_bot else 'e', fill='x')
+    bubble_frame.pack(pady=1, padx=10, anchor='w' if is_bot else 'e', fill='x')
     
     # Time and copy button frame
     time_frame = Frame(content_frame, bg=bubble_color)
-    time_frame.pack(fill='x', padx=5, pady=(5,0))
+    time_frame.pack(fill='x', padx=5, pady=(1,0))
     
     # Time label
     time_label = Label(time_frame, 
@@ -199,18 +199,18 @@ def create_message_bubble(parent, message, is_bot=True, icon_image=None):
                         width=8)
     copy_button.pack(side='left')
     
-    # Message content frame
-    msg_content = Frame(content_frame, bg=bubble_color)
-    msg_content.pack(fill='x', padx=5, pady=5)
+    # Create a frame for the icon at the top
+    icon_frame = Frame(content_frame, bg=bubble_color)
+    icon_frame.pack(fill='x', padx=5, pady=(5,0))
     
-    # Icon (if provided)
+    # Icon (if provided) - Always at the top
     if icon_image:
-        icon_label = Label(msg_content, image=icon_image, bg=bubble_color)
-        icon_label.pack(side='left', padx=(0,5))
+        icon_label = Label(icon_frame, image=icon_image, bg=bubble_color)
+        icon_label.pack(side='left')
     
-    # Message text frame
-    text_frame = Frame(msg_content, bg=bubble_color)
-    text_frame.pack(side='left', fill='x', expand=True)
+    # Message text frame with padding
+    text_frame = Frame(content_frame, bg=bubble_color)
+    text_frame.pack(fill='x', padx=5, pady=(10,5))  # 10px top padding
     
     # Create a text widget for the message
     msg_text = Text(text_frame,
@@ -221,24 +221,98 @@ def create_message_bubble(parent, message, is_bot=True, icon_image=None):
                    bg=bubble_color,
                    relief='flat',
                    padx=5,
-                   pady=5)
+                   pady=0,
+                   spacing1=0,
+                   spacing2=0,
+                   spacing3=0,
+                   highlightthickness=0)
     msg_text.pack(side='left', fill='x', expand=True)
     msg_text.insert('1.0', message)
     msg_text.configure(state='disabled')
     
     # Adjust height based on content
     def adjust_height():
-        # Count the number of lines in the text
-        line_count = msg_text.count('1.0', 'end', 'lines')[0]
+        # Get the text content
+        text_content = msg_text.get('1.0', 'end-1c')
+        
+        # Calculate the number of lines needed
+        text_width = msg_text.winfo_width() // 10  # Approximate width in characters
+        
+        # Split the text into words
+        words = text_content.split()
+        current_line = []
+        lines = []
+        
+        # Create lines based on the widget width
+        for word in words:
+            current_line.append(word)
+            line_text = ' '.join(current_line)
+            if len(line_text) > text_width:
+                if len(current_line) > 1:
+                    current_line.pop()  # Remove the last word
+                    lines.append(' '.join(current_line))
+                    current_line = [word]  # Start new line with the word that didn't fit
+                else:
+                    lines.append(line_text)
+                    current_line = []
+        
+        # Add any remaining words
+        if current_line:
+            lines.append(' '.join(current_line))
+        
+        # Calculate the actual height needed
+        line_count = len(lines)
+        if line_count == 0:
+            line_count = 1  # Ensure at least one line for empty messages
+        
+        # Calculate the actual height needed for the text
+        text_height = line_count * 20  # 20 pixels per line for better readability
+        
+        # Calculate logo height if present
+        logo_height = 0
+        if icon_image:
+            logo_height = 32  # Standard icon size
+        
+        # Calculate total height including all components
+        total_height = (
+            text_height +  # Text height
+            logo_height +  # Logo height
+            40 +  # Padding (20 top, 20 bottom)
+            10 +  # Space between logo and text
+            20    # Time frame height
+        )
+        
         # Set the height to match the content
         msg_text.configure(height=line_count)
-        # Update the canvas height
+        
+        # Update the canvas height to match exactly
         canvas = bubble_frame.winfo_children()[0]
-        # Calculate required height: line_count * line_height + padding
-        required_height = line_count * 20 + 60  # 20 pixels per line + padding
-        canvas.configure(height=required_height)
+        canvas.configure(height=total_height)
+        
         # Update the frame to accommodate the new height
         frame.update_idletasks()
+        
+        # Ensure the message is visible in the scrollable area
+        parent.see('1.0')
+        
+        # Force the text widget to update its height
+        msg_text.update_idletasks()
+        
+        # Get the actual height of the text widget
+        actual_height = msg_text.winfo_height()
+        
+        # If the actual height is different from what we calculated, adjust the canvas
+        if actual_height != total_height:
+            # Ensure minimum height for short messages
+            min_height = 80  # Minimum height in pixels (including logo)
+            canvas.configure(height=max(actual_height + logo_height + 70, min_height))
+            frame.update_idletasks()
+        
+        # Adjust the text widget's width to match the content
+        text_width = len(max(lines, key=len)) * 10  # Approximate width in pixels
+        if text_width < msg_text.winfo_width():
+            msg_text.configure(width=text_width // 10)  # Convert to characters
+            frame.update_idletasks()
     
     # Call adjust_height after the widget is fully created
     msg_text.after(10, adjust_height)
@@ -961,6 +1035,158 @@ def check_microphone_status():
     except Exception as e:
         return False, str(e)
 
+# Add this after the imports and before the menu creation
+def show_about_window():
+    about_window = Toplevel(root)
+    about_window.title('About Us')
+    about_window.geometry('300x400')
+    about_window.resizable(False, False)
+    
+    # Center the window
+    about_window.update_idletasks()
+    width = about_window.winfo_width()
+    height = about_window.winfo_height()
+    x = (about_window.winfo_screenwidth() // 2) - (width // 2)
+    y = (about_window.winfo_screenheight() // 2) - (height // 2)
+    about_window.geometry(f'{width}x{height}+{x}+{y}')
+    
+    # Create main frame
+    main_frame = Frame(about_window, padx=20, pady=20)
+    main_frame.pack(expand=True, fill='both')
+    
+    # Load and display logo
+    try:
+        logo_img = Image.open(app_icon_path)
+        logo_img = logo_img.resize((100, 100), Image.LANCZOS)
+        logo_photo = ImageTk.PhotoImage(logo_img)
+        logo_label = Label(main_frame, image=logo_photo)
+        logo_label.image = logo_photo  # Keep a reference
+        logo_label.pack(pady=(0, 20))
+    except Exception as e:
+        print(f"Error loading logo: {e}")
+    
+    # Developer name
+    name_label = Label(main_frame, 
+                      text="Md. Yamin Hossain",
+                      font=('Arial', 14, 'bold'))
+    name_label.pack(pady=(0, 10))
+    
+    # Website label
+    website_label = Label(main_frame, 
+                         text="Website",
+                         font=('Arial', 12))
+    website_label.pack(pady=(0, 5))
+    
+    # Clickable website link
+    def open_website():
+        import webbrowser
+        webbrowser.open('https://needyamin.github.io')
+    
+    website_link = Label(main_frame,
+                        text="https://needyamin.github.io",
+                        font=('Arial', 12),
+                        fg='blue',
+                        cursor='hand2')
+    website_link.pack(pady=(0, 20))
+    website_link.bind('<Button-1>', lambda e: open_website())
+    
+    # Version info
+    version_label = Label(main_frame,
+                         text="Version 1.0",
+                         font=('Arial', 10))
+    version_label.pack(pady=(0, 10))
+    
+    # Close button
+    close_button = Button(main_frame,
+                         text="Close",
+                         command=about_window.destroy)
+    close_button.pack(pady=(0, 10))
+
+# Add this function after show_about_window
+def show_setup_instructions():
+    setup_window = Toplevel(root)
+    setup_window.title('How to Setup')
+    setup_window.geometry('600x400')
+    setup_window.resizable(False, False)
+    
+    # Center the window
+    setup_window.update_idletasks()
+    width = setup_window.winfo_width()
+    height = setup_window.winfo_height()
+    x = (setup_window.winfo_screenwidth() // 2) - (width // 2)
+    y = (setup_window.winfo_screenheight() // 2) - (height // 2)
+    setup_window.geometry(f'{width}x{height}+{x}+{y}')
+    
+    # Create main frame
+    main_frame = Frame(setup_window, padx=30, pady=30)
+    main_frame.pack(expand=True, fill='both')
+    
+    # Title
+    title_label = Label(main_frame,
+                       text="Setup Instructions",
+                       font=('Arial', 16, 'bold'))
+    title_label.pack(pady=(0, 20))
+    
+    # Create a frame for the instructions
+    instructions_frame = Frame(main_frame)
+    instructions_frame.pack(expand=True, fill='both')
+    
+    # Setup instructions with proper formatting
+    instructions = [
+        "1. Go to https://openrouter.ai/ and create your own account.",
+        "2. Then go to https://openrouter.ai/settings/keys and create your own key.",
+        "3. Copy your key.",
+        "4. Back on the software, go to File > Settings",
+        "5. Type password: admin",
+        "6. Replace the old API with your new API",
+        "7. Enter your new password and save",
+        "8. Done! You are ready to fly!"
+    ]
+    
+    # Add instructions with proper formatting
+    for instruction in instructions:
+        instruction_label = Label(instructions_frame,
+                                text=instruction,
+                                font=('Arial', 11),
+                                wraplength=500,
+                                justify='left',
+                                anchor='w')
+        instruction_label.pack(pady=5, fill='x')
+    
+    # Add clickable links
+    def open_openrouter():
+        import webbrowser
+        webbrowser.open('https://openrouter.ai/')
+    
+    def open_keys():
+        import webbrowser
+        webbrowser.open('https://openrouter.ai/settings/keys')
+    
+    # Create clickable links
+    link1 = Label(instructions_frame,
+                 text="https://openrouter.ai/",
+                 font=('Arial', 11),
+                 fg='blue',
+                 cursor='hand2',
+                 anchor='w')
+    link1.pack(pady=2, fill='x')
+    link1.bind('<Button-1>', lambda e: open_openrouter())
+    
+    link2 = Label(instructions_frame,
+                 text="https://openrouter.ai/settings/keys",
+                 font=('Arial', 11),
+                 fg='blue',
+                 cursor='hand2',
+                 anchor='w')
+    link2.pack(pady=2, fill='x')
+    link2.bind('<Button-1>', lambda e: open_keys())
+    
+    # Close button
+    close_button = Button(main_frame,
+                         text="Close",
+                         command=setup_window.destroy)
+    close_button.pack(pady=20)
+
 # Then create the menu
 menu_bar = Menu(root)
 file_menu = Menu(menu_bar, tearoff=0)
@@ -970,10 +1196,15 @@ file_menu.add_separator()
 file_menu.add_command(label='Exit', command=root.quit)
 menu_bar.add_cascade(label='File', menu=file_menu)
 
+# Create Help menu
 help_menu = Menu(menu_bar, tearoff=0)
 help_menu.add_command(label='API Status', command=check_api_status)
-help_menu.add_command(label='About', command=lambda: log('Speech-to-Text UI v1.0'))
+help_menu.add_separator()
+help_menu.add_command(label='How to Setup?', command=show_setup_instructions)
+help_menu.add_command(label='About', command=show_about_window)
 menu_bar.add_cascade(label='Help', menu=help_menu)
+
+# Configure the menu bar
 root.config(menu=menu_bar)
 
 output = scrolledtext.ScrolledText(root, 
@@ -982,7 +1213,8 @@ output = scrolledtext.ScrolledText(root,
                                  font=('Consolas', 11), 
                                  bg='#f0f0f0',
                                  padx=10,
-                                 pady=10)
+                                 pady=10,
+                                 height=20)  # Set a fixed height
 output.grid(row=0, column=0, columnspan=5, padx=10, pady=10, sticky='nsew')
 
 # Add style configurations
@@ -1045,6 +1277,13 @@ def setup_tray():
                 item('Quit', quit_app)
             )
             
+            # Stop any existing tray icon
+            if tray_icon is not None:
+                try:
+                    tray_icon.stop()
+                except:
+                    pass
+            
             tray_icon = Icon('Speech Assistant', img, 'Speech Assistant', menu)
             tray_icon_initialized = True
             
@@ -1069,8 +1308,11 @@ def on_closing():
             setup_tray()
         
         # Show notification
-        if tray_icon_initialized:
-            tray_icon.notify('Speech Assistant is running in the background', 'Click the tray icon to restore')
+        if tray_icon_initialized and tray_icon:
+            try:
+                tray_icon.notify('Speech Assistant is running in the background', 'Click the tray icon to restore')
+            except:
+                pass
     except Exception as e:
         print(f"Error minimizing to tray: {e}")
 
@@ -1086,8 +1328,11 @@ def on_minimize(event):
                 setup_tray()
             
             # Show notification
-            if tray_icon_initialized:
-                tray_icon.notify('Speech Assistant is running in the background', 'Click the tray icon to restore')
+            if tray_icon_initialized and tray_icon:
+                try:
+                    tray_icon.notify('Speech Assistant is running in the background', 'Click the tray icon to restore')
+                except:
+                    pass
     except Exception as e:
         print(f"Error minimizing window: {e}")
 
@@ -1108,7 +1353,10 @@ def quit_app(icon, item):
         
         # Stop the tray icon
         if tray_icon_initialized and tray_icon:
-            tray_icon.stop()
+            try:
+                tray_icon.stop()
+            except:
+                pass
         
         # Quit the application
         root.quit()
@@ -1185,14 +1433,25 @@ def is_startup_enabled():
 def update_startup_menu():
     """Update the Help menu to show the current startup status with tick icons."""
     help_menu.delete(0, "end")  # Clear existing menu items
+    
+    # Add API Status
+    help_menu.add_command(label='API Status', command=check_api_status)
+    help_menu.add_separator()
+    
+    # Add How to Setup
+    help_menu.add_command(label='How to Setup?', command=show_setup_instructions)
+    help_menu.add_separator()
+    
+    # Add startup options
     if is_startup_enabled():
         help_menu.add_command(label="✓ Start on Startup", command=lambda: toggle_startup(True))
         help_menu.add_command(label="Stop on Startup", command=lambda: toggle_startup(False))
     else:
         help_menu.add_command(label="Start on Startup", command=lambda: toggle_startup(True))
         help_menu.add_command(label="✓ Stop on Startup", command=lambda: toggle_startup(False))
+    
     help_menu.add_separator()
-    help_menu.add_command(label="About", command=lambda: log("Speech-to-Text UI v1.0"))
+    help_menu.add_command(label="About", command=show_about_window)
 
 def toggle_startup(enable):
     """Enable or disable startup functionality."""
