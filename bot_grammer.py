@@ -530,6 +530,9 @@ def start_recording():
         stop_btn.config(state='normal')
         update_status("Recording started... Click 'Stop' when done.")
         
+        # Change only status label background color to light red
+        status_label.configure(bg='#FFE4E1')  # Light red color
+        
         # Start recording in a separate thread
         threading.Thread(target=run_stream, daemon=True).start()
     except Exception as e:
@@ -543,6 +546,9 @@ def stop_recording():
         start_btn.config(state='normal')
         stop_btn.config(state='disabled')
         update_status("Recording stopped.")
+        
+        # Reset status label background color to default
+        status_label.configure(bg='#f0f0f0')
         
         # Process the recorded audio
         process_audio()
