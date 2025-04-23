@@ -940,6 +940,21 @@ def test_connection(status_label):
     except Exception as e:
         status_label.config(text=f"API Connection: Failed - {str(e)}", fg="red")
 
+def check_microphone_status():
+    """Check if microphone is available and working."""
+    try:
+        devices = sd.query_devices()
+        input_devices = [d for d in devices if d['max_input_channels'] > 0]
+        if not input_devices:
+            return False, "No microphone detected"
+        
+        # Try to open a test stream
+        test_stream = sd.InputStream(samplerate=16000, channels=1)
+        test_stream.close()
+        return True, None
+    except Exception as e:
+        return False, str(e)
+
 # Then create the menu
 menu_bar = Menu(root)
 file_menu = Menu(menu_bar, tearoff=0)
@@ -982,9 +997,16 @@ settings_btn.grid(row=0, column=3, padx=5)
 # Configure microphone dropdown
 mic_devices = [d['name'] for d in sd.query_devices() if d['max_input_channels']>0]
 mic_dropdown = ttk.Combobox(btn_frame, values=mic_devices)
-if mic_devices:
-    mic_dropdown.set(mic_devices[0])
 mic_dropdown.grid(row=0, column=4, padx=5, sticky='ew')
+mic_dropdown.grid_remove()  # Hide by default
+
+# Check microphone status and show dropdown only if needed
+mic_status, mic_error = check_microphone_status()
+if not mic_status:
+    mic_dropdown.grid()  # Show dropdown if there's an error
+    log(f"Microphone error: {mic_error}", level='WARNING')
+elif mic_devices:
+    mic_dropdown.set(mic_devices[0])
 
 # Configure grid weights
 root.grid_rowconfigure(0, weight=1)
@@ -1003,26 +1025,26 @@ def center_window(window):
 def setup_tray():
     global tray_icon, tray_icon_initialized
     try:
-        if tray_icon_initialized and tray_icon:
-            tray_icon.stop()
-        
-        # Create a default icon if the file doesn't exist
-        if not os.path.exists(app_icon_path):
-            img = Image.new('RGB', (64, 64), color='blue')
-        else:
-            img = Image.open(app_icon_path)
-        
-        # Create the tray icon
-        menu = (
-            item('Restore', restore),
-            item('Quit', quit_app)
-        )
-        
-        tray_icon = Icon('Speech Assistant', img, 'Speech Assistant', menu)
-        tray_icon_initialized = True
-        
-        # Start the tray icon in a separate thread
-        threading.Thread(target=tray_icon.run, daemon=True).start()
+        # Only create tray icon if it doesn't exist
+        if not tray_icon_initialized:
+            # Create a default icon if the file doesn't exist
+            if not os.path.exists(app_icon_path):
+                img = Image.new('RGB', (64, 64), color='blue')
+            else:
+                img = Image.open(app_icon_path)
+            
+            # Create the tray icon
+            menu = (
+                item('Restore', restore),
+                item('Quit', quit_app)
+            )
+            
+            tray_icon = Icon('Speech Assistant', img, 'Speech Assistant', menu)
+            tray_icon_initialized = True
+            
+            # Start the tray icon in a separate thread
+            threading.Thread(target=tray_icon.run, daemon=True).start()
+            return True
         return True
     except Exception as e:
         print(f"Error setting up tray icon: {e}")
@@ -1196,3 +1218,25 @@ if __name__ == '__main__':
         cleanup_tts()
         if tray_icon_initialized and tray_icon:
             tray_icon.stop()
+
+def create_desktop_shortcut():
+    """Create a shortcut for the app on the Windows Desktop."""
+    try:
+        desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
+        desktop_shortcut_path = os.path.join(desktop_path, "Speech Assistant.lnk")
+        
+        if not os.path.exists(desktop_shortcut_path):
+            shell = Dispatch("WScript.Shell", pythoncom.CoInitialize())
+            shortcut = shell.CreateShortcut(desktop_shortcut_path)
+            shortcut.TargetPath = sys.executable
+            shortcut.WorkingDirectory = os.path.dirname(sys.executable)
+            shortcut.IconLocation = os.path.join(os.path.dirname(sys.executable), "needyamin.ico")
+            shortcut.Save()
+            print(f"Desktop shortcut created at: {desktop_shortcut_path}")
+    except Exception as e:
+        print(f"Error creating desktop shortcut: {e}")
+
+# Create all shortcuts
+create_startup_shortcut()
+create_start_menu_shortcut()
+create_desktop_shortcut()
