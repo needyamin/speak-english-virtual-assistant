@@ -73,8 +73,8 @@
 For now, clone the repo and run with Python:
 
 ```bash
-git clone https://github.com/yourusername/tklish.git
-cd tklish
+git clone https://github.com/needyamin/speak-english-virtual-assistant.git
+cd speak-english-virtual-assistant
 pip install -r requirements.txt
 python main.py
 
