@@ -5,7 +5,7 @@
 > 🌐 Works both **online (GPT-3.5)** and **offline** with built-in grammar correction rules.
 ---
 
-![Image](https://github.com/user-attachments/assets/4a5a71e5-31c3-44b9-b305-73872b5ea7e5)
+![Image](https://github.com/user-attachments/assets/556d3502-fcd7-41db-b13c-f9945dca80da)
 
 
 ## ✨ Key Features
