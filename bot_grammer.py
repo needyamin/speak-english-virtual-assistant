@@ -46,7 +46,68 @@ tts_engine = None
 # Initialize root window first
 root = tk.Tk()
 root.title('🎧 Speech → 🧠 AI Grammar Fix → 🗣️ Voice')
-root.geometry('700x650')
+root.geometry('800x700')  # Increased window size
+
+# Set modern theme colors
+BG_COLOR = '#f5f5f5'
+PRIMARY_COLOR = '#2196F3'
+SECONDARY_COLOR = '#1976D2'
+ACCENT_COLOR = '#FF4081'
+TEXT_COLOR = '#333333'
+SUCCESS_COLOR = '#4CAF50'
+WARNING_COLOR = '#FFC107'
+ERROR_COLOR = '#F44336'
+
+# Configure root window
+root.configure(bg=BG_COLOR)
+root.option_add('*Font', 'Arial 10')
+
+# Configure ttk styles
+style = ttk.Style()
+style.theme_use('clam')  # Use clam theme as base
+
+# Configure button styles
+style.configure('Modern.TButton',
+    background=PRIMARY_COLOR,
+    foreground='white',
+    padding=10,
+    relief='flat',
+    font=('Arial', 10, 'bold')
+)
+style.map('Modern.TButton',
+    background=[('active', SECONDARY_COLOR)],
+    foreground=[('active', 'white')]
+)
+
+# Configure entry styles
+style.configure('Modern.TEntry',
+    fieldbackground='white',
+    foreground=TEXT_COLOR,
+    padding=5,
+    relief='flat'
+)
+
+# Configure label styles
+style.configure('Modern.TLabel',
+    background=BG_COLOR,
+    foreground=TEXT_COLOR,
+    font=('Arial', 10)
+)
+
+# Configure combobox styles
+style.configure('Modern.TCombobox',
+    fieldbackground='white',
+    foreground=TEXT_COLOR,
+    padding=5,
+    relief='flat'
+)
+
+# Configure scrollbar styles
+style.configure('Modern.Vertical.TScrollbar',
+    background=BG_COLOR,
+    troughcolor=BG_COLOR,
+    relief='flat'
+)
 
 # Initialize Tkinter variables after root window
 use_online_mode = BooleanVar(root, value=False)
@@ -172,35 +233,41 @@ def retry_connection(dialog):
 def create_message_bubble(parent, message, is_bot=True, icon_image=None):
     frame = Frame(parent, bg=parent['bg'])
     
-    bubble_color = '#E8E8E8' if is_bot else '#DCF8C6'
-    bubble_frame, content_frame = create_rounded_frame(frame, bubble_color)
-    bubble_frame.pack(pady=1, padx=10, anchor='w' if is_bot else 'e', fill='x')
+    # Modern bubble colors
+    bubble_color = '#E3F2FD' if is_bot else '#E8F5E9'  # Light blue for bot, light green for user
+    hover_color = '#BBDEFB' if is_bot else '#C8E6C9'  # Darker shade for hover
+    text_color = TEXT_COLOR
+    time_color = '#757575'
     
-    # Time and copy button frame
-    time_frame = Frame(content_frame, bg=bubble_color)
+    bubble_frame = Frame(frame, bg=bubble_color)
+    bubble_frame.pack(pady=5, padx=10, anchor='w' if is_bot else 'e', fill='x')
+    
+    # Time and copy button frame with modern styling
+    time_frame = Frame(bubble_frame, bg=bubble_color)
     time_frame.pack(fill='x', padx=5, pady=(1,0))
     
-    # Time label
+    # Time label with modern styling
     time_label = Label(time_frame, 
                       text=time.strftime('%d %B %Y: %I:%M %p').lstrip('0'),
-                      font=('Consolas', 8),
-                      fg='gray',
+                      font=('Arial', 8),
+                      fg=time_color,
                       bg=bubble_color)
     time_label.pack(side='left', padx=(0,10))
     
-    # Copy button
+    # Modern copy button
     copy_button = Button(time_frame,
-                        text='📋 Copy',
-                        font=('Consolas', 8),
-                        bg='#4CAF50',
-                        fg='white',
+                        text='📋',
+                        font=('Arial', 8),
+                        bg=bubble_color,
+                        fg=time_color,
                         relief='flat',
                         cursor='hand2',
-                        width=8)
+                        width=2,
+                        command=lambda: copy_text())
     copy_button.pack(side='left')
     
     # Create a frame for the icon at the top
-    icon_frame = Frame(content_frame, bg=bubble_color)
+    icon_frame = Frame(bubble_frame, bg=bubble_color)
     icon_frame.pack(fill='x', padx=5, pady=(5,0))
     
     # Icon (if provided) - Always at the top
@@ -209,16 +276,17 @@ def create_message_bubble(parent, message, is_bot=True, icon_image=None):
         icon_label.pack(side='left')
     
     # Message text frame with padding
-    text_frame = Frame(content_frame, bg=bubble_color)
-    text_frame.pack(fill='x', padx=5, pady=(10,5))  # 10px top padding
+    text_frame = Frame(bubble_frame, bg=bubble_color)
+    text_frame.pack(fill='x', padx=5, pady=(10,5))
     
-    # Create a text widget for the message
+    # Create a text widget for the message with modern styling
     msg_text = Text(text_frame,
                    wrap='word',
                    width=60,
                    height=1,
-                   font=('Consolas', 11),
+                   font=('Arial', 11),
                    bg=bubble_color,
+                   fg=text_color,
                    relief='flat',
                    padx=5,
                    pady=0,
@@ -229,6 +297,30 @@ def create_message_bubble(parent, message, is_bot=True, icon_image=None):
     msg_text.pack(side='left', fill='x', expand=True)
     msg_text.insert('1.0', message)
     msg_text.configure(state='disabled')
+    
+    # Add hover effect to the bubble
+    def on_enter(e):
+        bubble_frame.configure(bg=hover_color)
+        time_frame.configure(bg=hover_color)
+        icon_frame.configure(bg=hover_color)
+        text_frame.configure(bg=hover_color)
+        msg_text.configure(bg=hover_color)
+        copy_button.configure(bg=hover_color)
+        if icon_image:
+            icon_label.configure(bg=hover_color)
+    
+    def on_leave(e):
+        bubble_frame.configure(bg=bubble_color)
+        time_frame.configure(bg=bubble_color)
+        icon_frame.configure(bg=bubble_color)
+        text_frame.configure(bg=bubble_color)
+        msg_text.configure(bg=bubble_color)
+        copy_button.configure(bg=bubble_color)
+        if icon_image:
+            icon_label.configure(bg=bubble_color)
+    
+    bubble_frame.bind('<Enter>', on_enter)
+    bubble_frame.bind('<Leave>', on_leave)
     
     # Adjust height based on content
     def adjust_height():
@@ -265,35 +357,8 @@ def create_message_bubble(parent, message, is_bot=True, icon_image=None):
         if line_count == 0:
             line_count = 1  # Ensure at least one line for empty messages
         
-        # Calculate the actual height needed for the text
-        text_height = line_count * 20  # 20 pixels per line for better readability
-        
-        # Calculate logo height if present
-        logo_height = 0
-        if icon_image:
-            logo_height = 32  # Standard icon size
-        
-        # Calculate total height including all components
-        total_height = (
-            text_height +  # Text height
-            logo_height +  # Logo height
-            40 +  # Padding (20 top, 20 bottom)
-            10 +  # Space between logo and text
-            20    # Time frame height
-        )
-        
         # Set the height to match the content
         msg_text.configure(height=line_count)
-        
-        # Update the canvas height to match exactly
-        canvas = bubble_frame.winfo_children()[0]
-        canvas.configure(height=total_height)
-        
-        # Update the frame to accommodate the new height
-        frame.update_idletasks()
-        
-        # Ensure the message is visible in the scrollable area
-        parent.see('1.0')
         
         # Force the text widget to update its height
         msg_text.update_idletasks()
@@ -301,18 +366,9 @@ def create_message_bubble(parent, message, is_bot=True, icon_image=None):
         # Get the actual height of the text widget
         actual_height = msg_text.winfo_height()
         
-        # If the actual height is different from what we calculated, adjust the canvas
-        if actual_height != total_height:
-            # Ensure minimum height for short messages
-            min_height = 80  # Minimum height in pixels (including logo)
-            canvas.configure(height=max(actual_height + logo_height + 70, min_height))
-            frame.update_idletasks()
-        
-        # Adjust the text widget's width to match the content
-        text_width = len(max(lines, key=len)) * 10  # Approximate width in pixels
-        if text_width < msg_text.winfo_width():
-            msg_text.configure(width=text_width // 10)  # Convert to characters
-            frame.update_idletasks()
+        # Ensure minimum height for short messages
+        min_height = 80  # Minimum height in pixels (including logo)
+        frame.update_idletasks()
     
     # Call adjust_height after the widget is fully created
     msg_text.after(10, adjust_height)
@@ -326,24 +382,21 @@ def create_message_bubble(parent, message, is_bot=True, icon_image=None):
             
             # Show a temporary "Copied!" label with animation
             copied_label = Label(time_frame,
-                               text='✓ Copied!',
-                               font=('Consolas', 8),
-                               fg='green',
+                               text='✓',
+                               font=('Arial', 8),
+                               fg=SUCCESS_COLOR,
                                bg=bubble_color)
             copied_label.pack(side='left', padx=(5,0))
             
             # Animate the copied label
             def fade_out():
-                copied_label.configure(fg='#00FF00')
-                time_frame.after(500, lambda: copied_label.configure(fg='green'))
+                copied_label.configure(fg=SUCCESS_COLOR)
+                time_frame.after(500, lambda: copied_label.configure(fg=time_color))
                 time_frame.after(1000, copied_label.destroy)
             
             fade_out()
         except Exception as e:
             print(f"Error copying text: {e}")
-    
-    # Bind the copy function to the button
-    copy_button.configure(command=copy_text)
     
     # Force update to ensure button is visible
     frame.update_idletasks()
@@ -360,8 +413,8 @@ def create_rounded_frame(parent, bg_color, padding=10):
                    height=100)
     canvas.pack(fill='both', expand=True)
     
-    # Create rounded rectangle
-    radius = 15
+    # Create rounded rectangle with modern styling
+    radius = 20  # Increased radius for more modern look
     points = [
         radius, 0,
         500-radius, 0,
@@ -373,10 +426,18 @@ def create_rounded_frame(parent, bg_color, padding=10):
         0, radius
     ]
     
-    canvas.create_polygon(points, 
-                         smooth=True,
-                         fill=bg_color,
-                         outline=bg_color)
+    # Create the main bubble shape
+    bubble = canvas.create_polygon(points, 
+                                 smooth=True,
+                                 fill=bg_color,
+                                 outline=bg_color)
+    
+    # Add subtle shadow effect with a valid color
+    shadow = canvas.create_polygon(points,
+                                 smooth=True,
+                                 fill='#E0E0E0',  # Light gray shadow
+                                 outline='#E0E0E0')
+    canvas.tag_lower(shadow)
     
     # Create inner frame for content
     inner_frame = Frame(canvas, bg=bg_color)
@@ -547,30 +608,123 @@ def open_settings_interface():
     
     sett = Toplevel(root)
     sett.title('Settings')
+    sett.geometry('500x400')
+    sett.resizable(False, False)
+    sett.configure(bg=BG_COLOR)
+    
+    # Center the window
+    sett.update_idletasks()
+    width = sett.winfo_width()
+    height = sett.winfo_height()
+    x = (sett.winfo_screenwidth() // 2) - (width // 2)
+    y = (sett.winfo_screenheight() // 2) - (height // 2)
+    sett.geometry(f'{width}x{height}+{x}+{y}')
+    
+    # Create main frame
+    main_frame = Frame(sett, bg=BG_COLOR, padx=30, pady=30)
+    main_frame.pack(fill='both', expand=True)
+    
+    # Add title
+    title_label = Label(main_frame,
+                       text="⚙️ Settings",
+                       font=('Arial', 16, 'bold'),
+                       bg=BG_COLOR,
+                       fg=PRIMARY_COLOR)
+    title_label.pack(pady=(0, 20))
+    
+    # Create settings container
+    settings_container = Frame(main_frame, bg=BG_COLOR)
+    settings_container.pack(fill='both', expand=True)
     
     # Get current settings
     cur.execute('SELECT api_key, password FROM config WHERE id=1')
     current_settings = cur.fetchone()
     current_key = current_settings[0] if current_settings else ''
     
-    Label(sett, text='OpenAI API Key:').grid(row=0, column=0, padx=5, pady=5)
-    key_entry = Entry(sett, width=50)
-    key_entry.grid(row=0, column=1, padx=5, pady=5)
+    # API Key section
+    api_frame = Frame(settings_container, bg=BG_COLOR)
+    api_frame.pack(fill='x', pady=(0, 15))
+    
+    api_label = Label(api_frame,
+                     text="OpenAI API Key:",
+                     font=('Arial', 11),
+                     bg=BG_COLOR,
+                     fg=TEXT_COLOR)
+    api_label.pack(anchor='w')
+    
+    key_entry = ttk.Entry(api_frame,
+                         style='Modern.TEntry',
+                         width=50)
+    key_entry.pack(fill='x', pady=(5, 0))
     key_entry.insert(0, current_key)
     
-    Label(sett, text='API Base URL:').grid(row=1, column=0, padx=5, pady=5)
-    base_label = Label(sett, text=OPENAI_API_BASE, width=50)
-    base_label.grid(row=1, column=1, padx=5, pady=5)
+    # API Base URL section
+    base_frame = Frame(settings_container, bg=BG_COLOR)
+    base_frame.pack(fill='x', pady=(0, 15))
     
-    Label(sett, text='New Password:').grid(row=2, column=0, padx=5, pady=5)
-    new_entry = Entry(sett, show='*', width=50)
-    new_entry.grid(row=2, column=1, padx=5, pady=5)
+    base_label = Label(base_frame,
+                      text="API Base URL:",
+                      font=('Arial', 11),
+                      bg=BG_COLOR,
+                      fg=TEXT_COLOR)
+    base_label.pack(anchor='w')
     
-    Label(sett, text='Confirm Password:').grid(row=3, column=0, padx=5, pady=5)
-    conf_entry = Entry(sett, show='*', width=50)
-    conf_entry.grid(row=3, column=1, padx=5, pady=5)
+    base_value = Label(base_frame,
+                      text=OPENAI_API_BASE,
+                      font=('Arial', 10),
+                      bg='white',
+                      fg=TEXT_COLOR,
+                      relief='flat',
+                      padx=10,
+                      pady=5)
+    base_value.pack(fill='x', pady=(5, 0))
     
-    Button(sett, text='Save', command=save).grid(row=4, column=0, columnspan=2, pady=10)
+    # Password section
+    pass_frame = Frame(settings_container, bg=BG_COLOR)
+    pass_frame.pack(fill='x', pady=(0, 15))
+    
+    pass_label = Label(pass_frame,
+                      text="New Password:",
+                      font=('Arial', 11),
+                      bg=BG_COLOR,
+                      fg=TEXT_COLOR)
+    pass_label.pack(anchor='w')
+    
+    new_entry = ttk.Entry(pass_frame,
+                         style='Modern.TEntry',
+                         show='*',
+                         width=50)
+    new_entry.pack(fill='x', pady=(5, 0))
+    
+    conf_label = Label(pass_frame,
+                      text="Confirm Password:",
+                      font=('Arial', 11),
+                      bg=BG_COLOR,
+                      fg=TEXT_COLOR)
+    conf_label.pack(anchor='w', pady=(10, 0))
+    
+    conf_entry = ttk.Entry(pass_frame,
+                          style='Modern.TEntry',
+                          show='*',
+                          width=50)
+    conf_entry.pack(fill='x', pady=(5, 0))
+    
+    # Save button
+    save_btn = ttk.Button(settings_container,
+                         text="💾 Save Settings",
+                         style='Modern.TButton',
+                         command=save)
+    save_btn.pack(pady=(20, 0))
+    
+    # Add hover effects
+    def on_enter(e):
+        e.widget.configure(style='Modern.TButton')
+    
+    def on_leave(e):
+        e.widget.configure(style='Modern.TButton')
+    
+    save_btn.bind('<Enter>', on_enter)
+    save_btn.bind('<Leave>', on_leave)
 
 def open_settings():
     verify_password()
@@ -582,7 +736,7 @@ def audio_callback(indata, frames_count, time_info, status):
 
 # Add a status bar at the bottom of the GUI
 status_label = Label(root, text="Ready", anchor="w", font=("Arial", 10), bg="#f0f0f0", relief="sunken")
-status_label.grid(row=2, column=0, columnspan=5, sticky="ew", padx=5, pady=5)
+status_label.pack(side='bottom', fill='x', padx=5, pady=5)
 
 def update_status(message):
     """Update the status bar with the given message."""
@@ -739,11 +893,22 @@ def play_voice(text):
         if tts_engine is None:
             if not initialize_tts():
                 return
-        tts_engine.say(text)
-        tts_engine.runAndWait()
+        
+        def speak():
+            try:
+                tts_engine.say(text)
+                tts_engine.runAndWait()
+            except Exception as e:
+                print(f"Error in TTS thread: {e}")
+            finally:
+                global is_speaking
+                is_speaking = False
+        
+        # Run TTS in a separate thread
+        tts_thread = threading.Thread(target=speak, daemon=True)
+        tts_thread.start()
     except Exception as e:
-        print(f"Error playing voice: {e}")
-    finally:
+        print(f"Error starting TTS thread: {e}")
         is_speaking = False
 
 def cleanup_tts():
@@ -1039,8 +1204,9 @@ def check_microphone_status():
 def show_about_window():
     about_window = Toplevel(root)
     about_window.title('About Us')
-    about_window.geometry('300x400')
+    about_window.geometry('400x500')
     about_window.resizable(False, False)
+    about_window.configure(bg=BG_COLOR)
     
     # Center the window
     about_window.update_idletasks()
@@ -1051,63 +1217,98 @@ def show_about_window():
     about_window.geometry(f'{width}x{height}+{x}+{y}')
     
     # Create main frame
-    main_frame = Frame(about_window, padx=20, pady=20)
-    main_frame.pack(expand=True, fill='both')
+    main_frame = Frame(about_window, bg=BG_COLOR, padx=30, pady=30)
+    main_frame.pack(fill='both', expand=True)
+    
+    # Add title
+    title_label = Label(main_frame,
+                       text="ℹ️ About",
+                       font=('Arial', 16, 'bold'),
+                       bg=BG_COLOR,
+                       fg=PRIMARY_COLOR)
+    title_label.pack(pady=(0, 20))
     
     # Load and display logo
     try:
         logo_img = Image.open(app_icon_path)
-        logo_img = logo_img.resize((100, 100), Image.LANCZOS)
+        logo_img = logo_img.resize((120, 120), Image.LANCZOS)
         logo_photo = ImageTk.PhotoImage(logo_img)
-        logo_label = Label(main_frame, image=logo_photo)
+        logo_label = Label(main_frame, image=logo_photo, bg=BG_COLOR)
         logo_label.image = logo_photo  # Keep a reference
         logo_label.pack(pady=(0, 20))
     except Exception as e:
         print(f"Error loading logo: {e}")
     
-    # Developer name
-    name_label = Label(main_frame, 
-                      text="Md. Yamin Hossain",
-                      font=('Arial', 14, 'bold'))
-    name_label.pack(pady=(0, 10))
+    # Developer info
+    dev_frame = Frame(main_frame, bg=BG_COLOR)
+    dev_frame.pack(fill='x', pady=(0, 20))
     
-    # Website label
-    website_label = Label(main_frame, 
-                         text="Website",
-                         font=('Arial', 12))
+    name_label = Label(dev_frame,
+                      text="Md. Yamin Hossain",
+                      font=('Arial', 14, 'bold'),
+                      bg=BG_COLOR,
+                      fg=TEXT_COLOR)
+    name_label.pack(pady=(0, 5))
+    
+    # Website section
+    website_frame = Frame(main_frame, bg=BG_COLOR)
+    website_frame.pack(fill='x', pady=(0, 20))
+    
+    website_label = Label(website_frame,
+                         text="🌐 Website",
+                         font=('Arial', 12),
+                         bg=BG_COLOR,
+                         fg=TEXT_COLOR)
     website_label.pack(pady=(0, 5))
     
-    # Clickable website link
     def open_website():
         import webbrowser
         webbrowser.open('https://needyamin.github.io')
     
-    website_link = Label(main_frame,
+    website_link = Label(website_frame,
                         text="https://needyamin.github.io",
-                        font=('Arial', 12),
-                        fg='blue',
+                        font=('Arial', 11),
+                        fg=PRIMARY_COLOR,
+                        bg=BG_COLOR,
                         cursor='hand2')
-    website_link.pack(pady=(0, 20))
+    website_link.pack()
     website_link.bind('<Button-1>', lambda e: open_website())
     
     # Version info
-    version_label = Label(main_frame,
-                         text="Version 1.0",
-                         font=('Arial', 10))
-    version_label.pack(pady=(0, 10))
+    version_frame = Frame(main_frame, bg=BG_COLOR)
+    version_frame.pack(fill='x', pady=(0, 20))
+    
+    version_label = Label(version_frame,
+                         text="📦 Version 1.0",
+                         font=('Arial', 11),
+                         bg=BG_COLOR,
+                         fg=TEXT_COLOR)
+    version_label.pack()
     
     # Close button
-    close_button = Button(main_frame,
-                         text="Close",
-                         command=about_window.destroy)
-    close_button.pack(pady=(0, 10))
+    close_btn = ttk.Button(main_frame,
+                          text="✕ Close",
+                          style='Modern.TButton',
+                          command=about_window.destroy)
+    close_btn.pack(pady=(20, 0))
+    
+    # Add hover effects
+    def on_enter(e):
+        e.widget.configure(style='Modern.TButton')
+    
+    def on_leave(e):
+        e.widget.configure(style='Modern.TButton')
+    
+    close_btn.bind('<Enter>', on_enter)
+    close_btn.bind('<Leave>', on_leave)
 
 # Add this function after show_about_window
 def show_setup_instructions():
     setup_window = Toplevel(root)
     setup_window.title('How to Setup')
-    setup_window.geometry('600x400')
+    setup_window.geometry('600x500')
     setup_window.resizable(False, False)
+    setup_window.configure(bg=BG_COLOR)
     
     # Center the window
     setup_window.update_idletasks()
@@ -1118,18 +1319,20 @@ def show_setup_instructions():
     setup_window.geometry(f'{width}x{height}+{x}+{y}')
     
     # Create main frame
-    main_frame = Frame(setup_window, padx=30, pady=30)
-    main_frame.pack(expand=True, fill='both')
+    main_frame = Frame(setup_window, bg=BG_COLOR, padx=30, pady=30)
+    main_frame.pack(fill='both', expand=True)
     
-    # Title
+    # Add title
     title_label = Label(main_frame,
-                       text="Setup Instructions",
-                       font=('Arial', 16, 'bold'))
+                       text="📝 Setup Instructions",
+                       font=('Arial', 16, 'bold'),
+                       bg=BG_COLOR,
+                       fg=PRIMARY_COLOR)
     title_label.pack(pady=(0, 20))
     
     # Create a frame for the instructions
-    instructions_frame = Frame(main_frame)
-    instructions_frame.pack(expand=True, fill='both')
+    instructions_frame = Frame(main_frame, bg=BG_COLOR)
+    instructions_frame.pack(fill='both', expand=True)
     
     # Setup instructions with proper formatting
     instructions = [
@@ -1144,14 +1347,29 @@ def show_setup_instructions():
     ]
     
     # Add instructions with proper formatting
-    for instruction in instructions:
-        instruction_label = Label(instructions_frame,
+    for i, instruction in enumerate(instructions):
+        step_frame = Frame(instructions_frame, bg=BG_COLOR)
+        step_frame.pack(fill='x', pady=5)
+        
+        # Step number
+        step_label = Label(step_frame,
+                          text=f"{i+1}.",
+                          font=('Arial', 11, 'bold'),
+                          bg=BG_COLOR,
+                          fg=PRIMARY_COLOR,
+                          width=3)
+        step_label.pack(side='left', padx=(0, 5))
+        
+        # Instruction text
+        instruction_label = Label(step_frame,
                                 text=instruction,
                                 font=('Arial', 11),
+                                bg=BG_COLOR,
+                                fg=TEXT_COLOR,
                                 wraplength=500,
                                 justify='left',
                                 anchor='w')
-        instruction_label.pack(pady=5, fill='x')
+        instruction_label.pack(side='left', fill='x', expand=True)
     
     # Add clickable links
     def open_openrouter():
@@ -1162,30 +1380,66 @@ def show_setup_instructions():
         import webbrowser
         webbrowser.open('https://openrouter.ai/settings/keys')
     
-    # Create clickable links
-    link1 = Label(instructions_frame,
+    # Create links frame
+    links_frame = Frame(main_frame, bg=BG_COLOR)
+    links_frame.pack(fill='x', pady=(20, 0))
+    
+    # OpenRouter link
+    link1_frame = Frame(links_frame, bg=BG_COLOR)
+    link1_frame.pack(fill='x', pady=5)
+    
+    link1_label = Label(link1_frame,
+                       text="🔗 OpenRouter Website:",
+                       font=('Arial', 11),
+                       bg=BG_COLOR,
+                       fg=TEXT_COLOR)
+    link1_label.pack(side='left', padx=(0, 5))
+    
+    link1 = Label(link1_frame,
                  text="https://openrouter.ai/",
                  font=('Arial', 11),
-                 fg='blue',
-                 cursor='hand2',
-                 anchor='w')
-    link1.pack(pady=2, fill='x')
+                 fg=PRIMARY_COLOR,
+                 bg=BG_COLOR,
+                 cursor='hand2')
+    link1.pack(side='left')
     link1.bind('<Button-1>', lambda e: open_openrouter())
     
-    link2 = Label(instructions_frame,
+    # Keys link
+    link2_frame = Frame(links_frame, bg=BG_COLOR)
+    link2_frame.pack(fill='x', pady=5)
+    
+    link2_label = Label(link2_frame,
+                       text="🔑 API Keys Page:",
+                       font=('Arial', 11),
+                       bg=BG_COLOR,
+                       fg=TEXT_COLOR)
+    link2_label.pack(side='left', padx=(0, 5))
+    
+    link2 = Label(link2_frame,
                  text="https://openrouter.ai/settings/keys",
                  font=('Arial', 11),
-                 fg='blue',
-                 cursor='hand2',
-                 anchor='w')
-    link2.pack(pady=2, fill='x')
+                 fg=PRIMARY_COLOR,
+                 bg=BG_COLOR,
+                 cursor='hand2')
+    link2.pack(side='left')
     link2.bind('<Button-1>', lambda e: open_keys())
     
     # Close button
-    close_button = Button(main_frame,
-                         text="Close",
-                         command=setup_window.destroy)
-    close_button.pack(pady=20)
+    close_btn = ttk.Button(main_frame,
+                          text="✕ Close",
+                          style='Modern.TButton',
+                          command=setup_window.destroy)
+    close_btn.pack(pady=(20, 0))
+    
+    # Add hover effects
+    def on_enter(e):
+        e.widget.configure(style='Modern.TButton')
+    
+    def on_leave(e):
+        e.widget.configure(style='Modern.TButton')
+    
+    close_btn.bind('<Enter>', on_enter)
+    close_btn.bind('<Leave>', on_leave)
 
 # Then create the menu
 menu_bar = Menu(root)
@@ -1207,48 +1461,125 @@ menu_bar.add_cascade(label='Help', menu=help_menu)
 # Configure the menu bar
 root.config(menu=menu_bar)
 
-output = scrolledtext.ScrolledText(root, 
-                                 wrap=tk.WORD, 
-                                 state='disabled', 
-                                 font=('Consolas', 11), 
-                                 bg='#f0f0f0',
-                                 padx=10,
-                                 pady=10,
-                                 height=20)  # Set a fixed height
-output.grid(row=0, column=0, columnspan=5, padx=10, pady=10, sticky='nsew')
+# Create main container
+main_container = Frame(root, bg=BG_COLOR)
+main_container.pack(fill='both', expand=True, padx=20, pady=20)
 
-# Add style configurations
-style = ttk.Style()
-style.configure('Chat.TFrame', background='#f0f0f0')
+# Create header frame
+header_frame = Frame(main_container, bg=BG_COLOR)
+header_frame.pack(fill='x', pady=(0, 20))
 
-btn_frame = tk.Frame(root)
-btn_frame.grid(row=1, column=0, columnspan=5, pady=5, sticky='ew')
-start_btn = Button(btn_frame, text='Start Recording', command=start_recording)
-stop_btn = Button(btn_frame, text='Stop Recording', state='disabled', command=stop_recording)
-clear_btn = Button(btn_frame, text='Clear Logs', command=lambda: log('Clear Logs'))
-settings_btn = Button(btn_frame, text='Settings', command=open_settings)
-start_btn.grid(row=0, column=0, padx=5)
-stop_btn.grid(row=0, column=1, padx=5)
-clear_btn.grid(row=0, column=2, padx=5)
-settings_btn.grid(row=0, column=3, padx=5)
+# Add title label
+title_label = Label(header_frame,
+                   text="🎧 Speech Assistant",
+                   font=("Arial", 16, "bold"),
+                   bg=BG_COLOR,
+                   fg=TEXT_COLOR)
+title_label.pack(side='left')
 
-# Configure microphone dropdown
-mic_devices = [d['name'] for d in sd.query_devices() if d['max_input_channels']>0]
-mic_dropdown = ttk.Combobox(btn_frame, values=mic_devices)
-mic_dropdown.grid(row=0, column=4, padx=5, sticky='ew')
-mic_dropdown.grid_remove()  # Hide by default
+# Add status indicator
+status_indicator = Canvas(header_frame, width=20, height=20, bg=BG_COLOR, highlightthickness=0)
+status_indicator.pack(side='right', padx=(0, 10))
+status_circle = status_indicator.create_oval(2, 2, 18, 18, fill=SUCCESS_COLOR)
 
-# Check microphone status and show dropdown only if needed
-mic_status, mic_error = check_microphone_status()
-if not mic_status:
-    mic_dropdown.grid()  # Show dropdown if there's an error
-    log(f"Microphone error: {mic_error}", level='WARNING')
-elif mic_devices:
+# Create chat area with modern styling
+chat_frame = Frame(main_container, bg=BG_COLOR)
+chat_frame.pack(fill='both', expand=True)
+
+# Create scrollable text area with modern styling
+output = scrolledtext.ScrolledText(chat_frame,
+                                 wrap=tk.WORD,
+                                 state='disabled',
+                                 font=('Arial', 11),
+                                 bg='white',
+                                 fg=TEXT_COLOR,
+                                 padx=15,
+                                 pady=15,
+                                 relief='flat',
+                                 highlightthickness=0)
+output.pack(fill='both', expand=True)
+
+# Create control panel with modern styling
+control_panel = Frame(main_container, bg=BG_COLOR)
+control_panel.pack(fill='x', pady=(20, 0))
+
+# Create button container
+btn_container = Frame(control_panel, bg=BG_COLOR)
+btn_container.pack(side='left', fill='x', expand=True)
+
+# Create modern buttons
+start_btn = ttk.Button(btn_container,
+                      text='🎤 Start Recording',
+                      style='Modern.TButton',
+                      command=start_recording)
+start_btn.pack(side='left', padx=5)
+
+stop_btn = ttk.Button(btn_container,
+                     text='⏹️ Stop Recording',
+                     style='Modern.TButton',
+                     state='disabled',
+                     command=stop_recording)
+stop_btn.pack(side='left', padx=5)
+
+clear_btn = ttk.Button(btn_container,
+                      text='🗑️ Clear Logs',
+                      style='Modern.TButton',
+                      command=lambda: log('Clear Logs'))
+clear_btn.pack(side='left', padx=5)
+
+settings_btn = ttk.Button(btn_container,
+                        text='⚙️ Settings',
+                        style='Modern.TButton',
+                        command=open_settings)
+settings_btn.pack(side='left', padx=5)
+
+# Get available microphone devices
+def get_mic_devices():
+    try:
+        devices = sd.query_devices()
+        mic_list = [d['name'] for d in devices if d['max_input_channels'] > 0]
+        return mic_list if mic_list else ['Default Microphone']
+    except Exception as e:
+        print(f"Error getting microphone devices: {e}")
+        return ['Default Microphone']
+
+# Initialize microphone devices
+mic_devices = get_mic_devices()
+
+# Create microphone selector with modern styling
+mic_frame = Frame(control_panel, bg=BG_COLOR)
+mic_frame.pack(side='right', fill='x', padx=5)
+
+mic_label = Label(mic_frame,
+                 text="🎤 Microphone:",
+                 font=('Arial', 10),
+                 bg=BG_COLOR,
+                 fg=TEXT_COLOR)
+mic_label.pack(side='left', padx=(0, 5))
+
+mic_dropdown = ttk.Combobox(mic_frame,
+                          values=mic_devices,
+                          style='Modern.TCombobox',
+                          state='readonly',
+                          width=30)
+mic_dropdown.pack(side='left')
+if mic_devices:
     mic_dropdown.set(mic_devices[0])
 
+# Create status bar with modern styling
+status_bar = Frame(main_container, bg=BG_COLOR, height=30)
+status_bar.pack(fill='x', pady=(10, 0))
+
+status_label = Label(status_bar,
+                    text="Ready",
+                    font=('Arial', 9),
+                    bg=BG_COLOR,
+                    fg=TEXT_COLOR)
+status_label.pack(side='left', padx=5)
+
 # Configure grid weights
-root.grid_rowconfigure(0, weight=1)
-root.grid_columnconfigure(0, weight=1)
+main_container.grid_rowconfigure(1, weight=1)
+main_container.grid_columnconfigure(0, weight=1)
 
 # Tray integration
 def center_window(window):
@@ -1395,9 +1726,9 @@ def create_startup_shortcut():
         if not os.path.exists(startup_shortcut_path):
             shell = Dispatch("WScript.Shell", pythoncom.CoInitialize())
             shortcut = shell.CreateShortcut(startup_shortcut_path)
-            shortcut.TargetPath = sys.executable
-            shortcut.WorkingDirectory = os.path.dirname(sys.executable)
-            shortcut.IconLocation = os.path.join(os.path.dirname(sys.executable), "needyamin.ico")
+            shortcut.TargetPath = os.path.abspath(sys.argv[0])  # Use absolute path of the script
+            shortcut.WorkingDirectory = os.path.dirname(os.path.abspath(sys.argv[0]))
+            shortcut.IconLocation = os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), "needyamin.ico")
             shortcut.Save()
             print(f"Startup shortcut created at: {startup_shortcut_path}")
     except Exception as e:
@@ -1409,9 +1740,9 @@ def create_start_menu_shortcut():
         if not os.path.exists(start_menu_shortcut_path):
             shell = Dispatch("WScript.Shell", pythoncom.CoInitialize())
             shortcut = shell.CreateShortcut(start_menu_shortcut_path)
-            shortcut.TargetPath = sys.executable
-            shortcut.WorkingDirectory = os.path.dirname(sys.executable)
-            shortcut.IconLocation = os.path.join(os.path.dirname(sys.executable), "needyamin.ico")
+            shortcut.TargetPath = os.path.abspath(sys.argv[0])  # Use absolute path of the script
+            shortcut.WorkingDirectory = os.path.dirname(os.path.abspath(sys.argv[0]))
+            shortcut.IconLocation = os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), "needyamin.ico")
             shortcut.Save()
             print(f"Start Menu shortcut created at: {start_menu_shortcut_path}")
     except Exception as e:
@@ -1493,9 +1824,9 @@ def create_desktop_shortcut():
         if not os.path.exists(desktop_shortcut_path):
             shell = Dispatch("WScript.Shell", pythoncom.CoInitialize())
             shortcut = shell.CreateShortcut(desktop_shortcut_path)
-            shortcut.TargetPath = sys.executable
-            shortcut.WorkingDirectory = os.path.dirname(sys.executable)
-            shortcut.IconLocation = os.path.join(os.path.dirname(sys.executable), "needyamin.ico")
+            shortcut.TargetPath = os.path.abspath(sys.argv[0])  # Use absolute path of the script
+            shortcut.WorkingDirectory = os.path.dirname(os.path.abspath(sys.argv[0]))
+            shortcut.IconLocation = os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), "needyamin.ico")
             shortcut.Save()
             print(f"Desktop shortcut created at: {desktop_shortcut_path}")
     except Exception as e:
